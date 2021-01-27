@@ -1,4 +1,5 @@
 const Builder = @import("std").build.Builder;
+const builtin = @import("builtin");
 
 pub fn build(b: *Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -11,13 +12,17 @@ pub fn build(b: *Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("zortuga", "src/main.zig");
+    const exe = b.addExecutable("tortuga", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.addIncludeDir("/usr/include");
+    exe.addLibPath("/usr/lib/x86_64-linux-gnu");
     exe.addObjectFile("./lib/libXau.a");
     exe.addObjectFile("./lib/libXdmcp.a");
     exe.addObjectFile("./lib/libxcb.a");
+    if (builtin.os.tag == .linux) {
+        exe.linkSystemLibrary("dl");
+    }
     exe.linkLibC();
     exe.install();
 

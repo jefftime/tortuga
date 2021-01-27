@@ -57,7 +57,7 @@ pub const Window = struct {
             c.XCB_ATOM_STRING,
             8,
             @intCast(u32, title.len),
-            &title
+            @ptrCast([*c]const u8, title)
         );
 
         // Atoms
