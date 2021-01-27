@@ -1,3 +1,4 @@
 pub const Render = @This();
-pub const RenderInstance = @import("render_instance.zig").RenderInstance;
+pub const Context = @import("context.zig").Context;
+pub const Device = @import("device.zig").Device;
 

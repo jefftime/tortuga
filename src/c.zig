@@ -1,9 +1,11 @@
 pub const builtin = @import("builtin");
+pub const std = @import("std");
 
 pub const c = @cImport({
     // libc
     @cInclude("stdlib.h");
     @cInclude("errno.h");
+    @cInclude("string.h");
 
     // XCB
     @cInclude("xcb/xcb.h");

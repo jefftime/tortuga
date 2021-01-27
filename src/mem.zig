@@ -7,7 +7,6 @@ pub fn alloc(comptime T: type, len: usize) ![*]T {
         0, 1, 2, 3, 4, 5, 6, 7 => 8,
         else => @alignOf(T)
     };
-    std.log.info("alignment: {}", .{alignment});
 
     const rc = c.posix_memalign(
         @ptrCast([*c]?*c_void, &mem),
@@ -21,6 +20,11 @@ pub fn alloc(comptime T: type, len: usize) ![*]T {
     }
 
     return @ptrCast([*]T, mem);
+}
+
+pub fn alloc_slice(comptime T: type, len: usize) ![]T {
+    var mem = try alloc(T, len);
+    return mem[0..len];
 }
 
 pub fn dealloc(ptr: anytype) void { c.free(ptr); }

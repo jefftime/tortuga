@@ -1,5 +1,6 @@
 const std = @import("std");
 const c = @import("c.zig").c;
+const dealloc = @import("mem.zig").dealloc;
 
 const WindowError = error {
     BadConnection,
@@ -141,6 +142,8 @@ pub const Window = struct {
 
                 else => {}
             }
+
+            dealloc(event);
         }
     }
 
