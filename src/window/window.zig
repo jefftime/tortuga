@@ -1,6 +1,6 @@
 const std = @import("std");
-const c = @import("c.zig").c;
-const dealloc = @import("mem.zig").dealloc;
+const c = @import("c").c;
+const dealloc = @import("mem").dealloc;
 
 const WindowError = error {
     BadConnection,
@@ -72,7 +72,7 @@ pub const Window = struct {
         var protocol = c.xcb_intern_atom_reply(cn, protocol_ck, null) orelse {
             return WindowError.InternAtom;
         };
-        defer c.free(protocol);
+        defer dealloc(protocol);
 
         const wm_delete_window = "WM_DELETE_WINDOW";
         var delete_ck = c.xcb_intern_atom(
@@ -84,7 +84,7 @@ pub const Window = struct {
         var delete = c.xcb_intern_atom_reply(cn, delete_ck, null) orelse {
             return WindowError.InternAtom;
         };
-        defer c.free(delete);
+        defer dealloc(delete);
 
         _ = c.xcb_change_property(
             cn,

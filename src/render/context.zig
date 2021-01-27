@@ -1,48 +1,48 @@
 const std = @import("std");
-const mem_zig = @import("../mem.zig");
+const mem_zig = @import("mem");
 const alloc = mem_zig.alloc;
 const dealloc = mem_zig.dealloc;
 const builtin = @import("builtin");
-const c = @import("../c.zig").c;
-const Window = @import("../window.zig").Window;
-
-pub var get_proc: c.PFN_vkGetInstanceProcAddr = undefined;
-pub var vkCreateInstance: c.PFN_vkCreateInstance = undefined;
-pub var vkEnumerateInstanceExtensionProperties:
-    c.PFN_vkEnumerateInstanceExtensionProperties = undefined;
-pub var vkDestroyInstance: c.PFN_vkDestroyInstance = undefined;
-pub var vkCreateXcbSurfaceKHR: c.PFN_vkCreateXcbSurfaceKHR = undefined;
-pub var vkDestroySurfaceKHR: c.PFN_vkDestroySurfaceKHR = undefined;
-pub var vkEnumeratePhysicalDevices: c.PFN_vkEnumeratePhysicalDevices = undefined;
-pub var vkGetDeviceProcAddr: c.PFN_vkGetDeviceProcAddr = undefined;
-pub var vkCreateDevice: c.PFN_vkCreateDevice = undefined;
-pub var vkDestroyDevice: c.PFN_vkDestroyDevice = undefined;
-pub var vkGetPhysicalDeviceQueueFamilyProperties:
-    c.PFN_vkGetPhysicalDeviceQueueFamilyProperties = undefined;
-pub var vkGetPhysicalDeviceSurfaceSupportKHR:
-    c.PFN_vkGetPhysicalDeviceSurfaceSupportKHR = undefined;
-pub var vkGetPhysicalDeviceSurfaceCapabilitiesKHR:
-    c.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = undefined;
-pub var vkGetPhysicalDeviceSurfaceFormatsKHR:
-    c.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR = undefined;
-pub var vkGetPhysicalDeviceSurfacePresentModesKHR:
-    c.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR = undefined;
-pub var vkCreateSwapchainKHR: c.PFN_vkCreateSwapchainKHR = undefined;
-pub var vkDestroySwapchainKHR: c.PFN_vkDestroySwapchainKHR = undefined;
-pub var vkGetSwapchainImagesKHR: c.PFN_vkGetSwapchainImagesKHR = undefined;
-pub var vkGetPhysicalDeviceMemoryProperties:
-    c.PFN_vkGetPhysicalDeviceMemoryProperties = undefined;
-pub var vkGetPhysicalDeviceProperties:
-    c.PFN_vkGetPhysicalDeviceProperties = undefined;
-pub var vkGetPhysicalDeviceFeatures:
-    c.PFN_vkGetPhysicalDeviceFeatures = undefined;
+const c = @import("c").c;
+const Window = @import("window").Window;
 
 pub const Context = struct {
+    pub var get_proc: c.PFN_vkGetInstanceProcAddr = undefined;
+    pub var vkCreateInstance: c.PFN_vkCreateInstance = undefined;
+    pub var vkEnumerateInstanceExtensionProperties:
+        c.PFN_vkEnumerateInstanceExtensionProperties = undefined;
+    pub var vkDestroyInstance: c.PFN_vkDestroyInstance = undefined;
+    pub var vkCreateXcbSurfaceKHR: c.PFN_vkCreateXcbSurfaceKHR = undefined;
+    pub var vkDestroySurfaceKHR: c.PFN_vkDestroySurfaceKHR = undefined;
+    pub var vkEnumeratePhysicalDevices: c.PFN_vkEnumeratePhysicalDevices = undefined;
+    pub var vkGetDeviceProcAddr: c.PFN_vkGetDeviceProcAddr = undefined;
+    pub var vkCreateDevice: c.PFN_vkCreateDevice = undefined;
+    pub var vkDestroyDevice: c.PFN_vkDestroyDevice = undefined;
+    pub var vkGetPhysicalDeviceQueueFamilyProperties:
+        c.PFN_vkGetPhysicalDeviceQueueFamilyProperties = undefined;
+    pub var vkGetPhysicalDeviceSurfaceSupportKHR:
+        c.PFN_vkGetPhysicalDeviceSurfaceSupportKHR = undefined;
+    pub var vkGetPhysicalDeviceSurfaceCapabilitiesKHR:
+        c.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR = undefined;
+    pub var vkGetPhysicalDeviceSurfaceFormatsKHR:
+        c.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR = undefined;
+    pub var vkGetPhysicalDeviceSurfacePresentModesKHR:
+        c.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR = undefined;
+    pub var vkCreateSwapchainKHR: c.PFN_vkCreateSwapchainKHR = undefined;
+    pub var vkDestroySwapchainKHR: c.PFN_vkDestroySwapchainKHR = undefined;
+    pub var vkGetSwapchainImagesKHR: c.PFN_vkGetSwapchainImagesKHR = undefined;
+    pub var vkGetPhysicalDeviceMemoryProperties:
+        c.PFN_vkGetPhysicalDeviceMemoryProperties = undefined;
+    pub var vkGetPhysicalDeviceProperties:
+        c.PFN_vkGetPhysicalDeviceProperties = undefined;
+    pub var vkGetPhysicalDeviceFeatures:
+        c.PFN_vkGetPhysicalDeviceFeatures = undefined;
+
     window: *const Window,
     vk_handle: ?*const c_void,
     instance: c.VkInstance,
     surface: c.VkSurfaceKHR,
-    devices: []c.VkPhysicalDevice,
+    devices: []c.VkPhysicalDevice, // TODO: Abstract this out
 
     pub fn init(window: *const Window, libpath: ?[]const u8) !Context {
         const extensions = [_][*c]const u8 {
@@ -59,7 +59,7 @@ pub const Context = struct {
         var xcb_ext = false;
         var surface_ext = false;
         for (supported_exts) |ext| {
-            std.log.info("found supported extension {}", .{ext});
+            std.log.info("found supported extension {}", .{ext.extensionName});
 
             if (c.strcmp(&ext.extensionName, "VK_KHR_surface") != 0) {
                 surface_ext = true;
@@ -103,7 +103,7 @@ pub const Context = struct {
         };
     }
 
-    pub fn deinit(self: *Context) void {
+    pub fn deinit(self: *const Context) void {
         std.log.info("destroy Context", .{});
         dealloc(self.devices.ptr);
         vkDestroySurfaceKHR.?(self.instance, self.surface, null);
@@ -129,7 +129,7 @@ fn load_vulkan(libpath: ?[]const u8) !*const c_void {
         return error.NotImplemented;
     };
 
-    get_proc = @ptrCast(
+    Context.get_proc = @ptrCast(
         c.PFN_vkGetInstanceProcAddr,
         c.dlsym(vk_handle, "vkGetInstanceProcAddr")
     ) orelse {
@@ -143,14 +143,14 @@ fn load_vulkan(libpath: ?[]const u8) !*const c_void {
 fn load(prefix: ?c.VkInstance, comptime symbol: []const u8) !void {
     std.log.info("loading symbol `{}`", .{symbol});
     const result = if (prefix) |p| a: {
-        break :a get_proc.?(p, symbol.ptr)
+        break :a Context.get_proc.?(p, symbol.ptr)
             orelse return error.BadFunctionLoad;
     } else a: {
-        break :a get_proc.?(null, symbol.ptr)
+        break :a Context.get_proc.?(null, symbol.ptr)
             orelse return error.BadFunctionLoad;
     };
 
-    @field(@This(), symbol) = @ptrCast(@field(c, "PFN_" ++ symbol), result);
+    @field(Context, symbol) = @ptrCast(@field(c, "PFN_" ++ symbol), result);
 }
 
 fn load_preinstance_functions() !void {
@@ -161,13 +161,17 @@ fn load_preinstance_functions() !void {
 fn get_extensions() ![]c.VkExtensionProperties {
     var len: u32 = undefined;
 
-    var result = vkEnumerateInstanceExtensionProperties.?(null, &len, null);
+    var result = Context.vkEnumerateInstanceExtensionProperties.?(
+        null,
+        &len,
+        null
+    );
     if (result != c.VkResult.VK_SUCCESS) {
         return error.BadExtensions;
     }
 
     var exts = try alloc(c.VkExtensionProperties, len);
-    result = vkEnumerateInstanceExtensionProperties.?(null, &len, exts);
+    result = Context.vkEnumerateInstanceExtensionProperties.?(null, &len, exts);
     if (result != c.VkResult.VK_SUCCESS) {
         return error.BadInstanceExtensions;
     }
@@ -205,13 +209,13 @@ fn create_instance(
     };
 
     var instance: c.VkInstance = undefined;
-    const result = vkCreateInstance.?(&create_info, null, &instance);
+    const result = Context.vkCreateInstance.?(&create_info, null, &instance);
     if (result != c.VkResult.VK_SUCCESS) {
-        std.log.err("could not create VkInstance", .{});
+        std.log.err("could not create Vulkan instance", .{});
         return error.BadInstance;
     }
 
-    std.log.info("created VkInstance", .{});
+    std.log.info("created Vulkan instance", .{});
 
     return instance;
 }
@@ -256,7 +260,7 @@ fn create_surface(
     };
 
     var surface: c.VkSurfaceKHR = undefined;
-    const result = vkCreateXcbSurfaceKHR.?(
+    const result = Context.vkCreateXcbSurfaceKHR.?(
         instance.*,
         &create_info,
         null,
@@ -264,14 +268,18 @@ fn create_surface(
     );
     if (result != c.VkResult.VK_SUCCESS) return error.BadSurface;
 
-    std.log.info("created VkSurfaceKHR", .{});
+    std.log.info("created Vulkan surface", .{});
 
     return surface;
 }
 
 fn get_devices(instance: *const c.VkInstance) ![]c.VkPhysicalDevice {
     var n_devices: u32 = undefined;
-    var result = vkEnumeratePhysicalDevices.?(instance.*, &n_devices, null);
+    var result = Context.vkEnumeratePhysicalDevices.?(
+        instance.*,
+        &n_devices,
+        null
+    );
     if (result != c.VkResult.VK_SUCCESS) return error.BadDevices;
     if (n_devices == 0) {
         std.log.err("could not find any physical devices", .{});
@@ -283,7 +291,11 @@ fn get_devices(instance: *const c.VkInstance) ![]c.VkPhysicalDevice {
     var pdevices = try alloc(c.VkPhysicalDevice, n_devices);
     errdefer dealloc(pdevices);
 
-    result = vkEnumeratePhysicalDevices.?(instance.*, &n_devices, pdevices);
+    result = Context.vkEnumeratePhysicalDevices.?(
+        instance.*,
+        &n_devices,
+        pdevices
+    );
     if (result != c.VkResult.VK_SUCCESS) return error.BadDevices;
 
     return pdevices[0..n_devices];
