@@ -141,7 +141,7 @@ fn load_vulkan(libpath: ?[]const u8) !*const c_void {
 }
 
 fn load(prefix: ?c.VkInstance, comptime symbol: []const u8) !void {
-    std.log.info("loading symbol `{}`", .{symbol});
+    std.log.info("loading instance function `{}`", .{symbol});
     const result = if (prefix) |p| a: {
         break :a Context.get_proc.?(p, symbol.ptr)
             orelse return error.BadFunctionLoad;
@@ -171,7 +171,11 @@ fn get_extensions() ![]c.VkExtensionProperties {
     }
 
     var exts = try alloc(c.VkExtensionProperties, len);
-    result = Context.vkEnumerateInstanceExtensionProperties.?(null, &len, exts);
+    result = Context.vkEnumerateInstanceExtensionProperties.?(
+        null,
+        &len,
+        exts.ptr
+    );
     if (result != c.VkResult.VK_SUCCESS) {
         return error.BadInstanceExtensions;
     }
@@ -289,12 +293,12 @@ fn get_devices(instance: *const c.VkInstance) ![]c.VkPhysicalDevice {
     }
 
     var pdevices = try alloc(c.VkPhysicalDevice, n_devices);
-    errdefer dealloc(pdevices);
+    errdefer dealloc(pdevices.ptr);
 
     result = Context.vkEnumeratePhysicalDevices.?(
         instance.*,
         &n_devices,
-        pdevices
+        pdevices.ptr
     );
     if (result != c.VkResult.VK_SUCCESS) return error.BadDevices;
 

@@ -4,7 +4,7 @@ const Render = @import("render").Render;
 const Context = Render.Context;
 const Device = Render.Device;
 const mem = @import("mem");
-const alloc_slice = mem.alloc_slice;
+const alloc = mem.alloc;
 const dealloc = mem.dealloc;
 
 pub fn main() anyerror!void {
@@ -16,7 +16,7 @@ pub fn main() anyerror!void {
     var context = try Context.init(&window, null);
     defer context.deinit();
 
-    var sorted_devices = try alloc_slice(u32, context.devices.len);
+    var sorted_devices = try alloc(u32, context.devices.len);
     defer dealloc(sorted_devices.ptr);
 
     // For now, just select the first device

@@ -1,7 +1,7 @@
 const std = @import("std");
 const c = @import("c").c;
 
-pub fn alloc(comptime T: type, len: usize) ![*]T {
+fn alloc_internal(comptime T: type, len: usize) ![*]T {
     var mem: *T = undefined;
     var alignment: usize = switch (@alignOf(T)) {
         0, 1, 2, 3, 4, 5, 6, 7 => 8,
@@ -22,9 +22,13 @@ pub fn alloc(comptime T: type, len: usize) ![*]T {
     return @ptrCast([*]T, mem);
 }
 
-pub fn alloc_slice(comptime T: type, len: usize) ![]T {
-    var mem = try alloc(T, len);
-    return mem[0..len];
+pub fn alloc(comptime T: type, len: usize) ![]T {
+    const result = try alloc_internal(T, len);
+    return result[0..len];
+}
+
+pub fn new(comptime T: type) !*T {
+    return @ptrCast(*T, alloc_internal(T, 1));
 }
 
 pub fn dealloc(ptr: anytype) void { c.free(ptr); }
