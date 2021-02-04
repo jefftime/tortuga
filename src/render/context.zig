@@ -11,6 +11,8 @@ pub const Context = struct {
     pub var vkCreateInstance: c.PFN_vkCreateInstance = undefined;
     pub var vkEnumerateInstanceExtensionProperties:
         c.PFN_vkEnumerateInstanceExtensionProperties = undefined;
+    pub var vkEnumerateInstanceLayerProperties:
+        c.PFN_vkEnumerateInstanceLayerProperties = undefined;
     pub var vkDestroyInstance: c.PFN_vkDestroyInstance = undefined;
     pub var vkCreateXcbSurfaceKHR: c.PFN_vkCreateXcbSurfaceKHR = undefined;
     pub var vkDestroySurfaceKHR: c.PFN_vkDestroySurfaceKHR = undefined;
@@ -52,10 +54,31 @@ pub const Context = struct {
 
         const vk_handle = try load_vulkan(libpath);
         try load_preinstance_functions();
-        const supported_exts = try get_extensions();
-        defer dealloc(supported_exts.ptr);
+
+        // Check layers
+        const supported_layers = try get_layers();
+        defer dealloc(supported_layers.ptr);
+        var standard_validation_layer = false;
+        for (supported_layers) |layer| {
+            std.log.info("found supported layer {}", .{layer.layerName});
+            const layer_match = c.strcmp(
+                &layer.layerName,
+                "VK_LAYER_LUNARG_standard_validation"
+            );
+            if (layer_match != 0) standard_validation_layer = true;
+        }
+        // TODO: remove this and don't hard error on unsupported validation
+        // layers
+        if (!standard_validation_layer) {
+            return error.UnsupportedLayers;
+        }
+        var layers = [_][*c]const u8 {
+            "VK_LAYER_LUNARG_standard_validation"
+        };
 
         // Check extensions
+        const supported_exts = try get_extensions();
+        defer dealloc(supported_exts.ptr);
         var xcb_ext = false;
         var surface_ext = false;
         for (supported_exts) |ext| {
@@ -79,12 +102,13 @@ pub const Context = struct {
         const instance = try create_instance(
             "",
             "",
-            extensions[0..extensions.len]
+            extensions[0..extensions.len],
+            layers[0..layers.len]
         );
         try load_instance_functions(instance);
         errdefer vkDestroyInstance.?(instance, null);
 
-        const surface = try create_surface(&instance, window);
+        const surface = try create_surface(instance, window);
         errdefer vkDestroySurfaceKHR.?(instance, surface, null);
 
         const physical_devices = try get_devices(&instance);
@@ -104,10 +128,10 @@ pub const Context = struct {
     }
 
     pub fn deinit(self: *const Context) void {
-        std.log.info("destroy Context", .{});
         dealloc(self.devices.ptr);
         vkDestroySurfaceKHR.?(self.instance, self.surface, null);
         vkDestroyInstance.?(self.instance, null);
+        std.log.info("destroying Context", .{});
     }
 };
 
@@ -156,19 +180,18 @@ fn load(prefix: ?c.VkInstance, comptime symbol: []const u8) !void {
 fn load_preinstance_functions() !void {
     try load(null, "vkCreateInstance");
     try load(null, "vkEnumerateInstanceExtensionProperties");
+    try load(null, "vkEnumerateInstanceLayerProperties");
 }
 
 fn get_extensions() ![]c.VkExtensionProperties {
-    var len: u32 = undefined;
+    var len: u32 = 0;
 
     var result = Context.vkEnumerateInstanceExtensionProperties.?(
         null,
         &len,
         null
     );
-    if (result != c.VkResult.VK_SUCCESS) {
-        return error.BadExtensions;
-    }
+    if (result != c.VkResult.VK_SUCCESS) return error.BadExtensions;
 
     var exts = try alloc(c.VkExtensionProperties, len);
     result = Context.vkEnumerateInstanceExtensionProperties.?(
@@ -180,18 +203,32 @@ fn get_extensions() ![]c.VkExtensionProperties {
         return error.BadInstanceExtensions;
     }
 
-    return exts[0..len];
+    return exts;
+}
+
+fn get_layers() ![]c.VkLayerProperties {
+    var len: u32 = 0;
+    var result = Context.vkEnumerateInstanceLayerProperties.?(
+        &len,
+        null
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadLayers;
+    var layers = try alloc(c.VkLayerProperties, len);
+    result = Context.vkEnumerateInstanceLayerProperties.?(
+        &len,
+        layers.ptr
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadLayers;
+
+    return layers;
 }
 
 fn create_instance(
     app_name: [*c]const u8,
     engine_name: [*c]const u8,
-    exts: []const [*c]const u8
+    exts: []const [*c]const u8,
+    layers: []const [*c]const u8
 ) !c.VkInstance {
-    const layers = [_][]const u8 {
-        "VK_LAYER_LUNARG_standard_validation"
-    };
-
     const app_info = c.VkApplicationInfo {
         .sType = c.VkStructureType.VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = null,
@@ -208,8 +245,8 @@ fn create_instance(
         .pApplicationInfo = &app_info,
         .enabledExtensionCount = @intCast(u32, exts.len),
         .ppEnabledExtensionNames = exts.ptr,
-        .enabledLayerCount = 0,
-        .ppEnabledLayerNames = c.VK_NULL_HANDLE,
+        .enabledLayerCount = @intCast(u32, layers.len),
+        .ppEnabledLayerNames = layers.ptr
     };
 
     var instance: c.VkInstance = undefined;
@@ -247,7 +284,7 @@ fn load_instance_functions(instance: ?c.VkInstance) !void {
 }
 
 fn create_surface(
-    instance: *const c.VkInstance,
+    instance: c.VkInstance,
     window: *const Window
 ) !c.VkSurfaceKHR {
     const create_info = if (builtin.os.tag == .linux) info: {
@@ -263,9 +300,9 @@ fn create_surface(
         return error.Unimplemented;
     };
 
-    var surface: c.VkSurfaceKHR = undefined;
+    var surface: c.VkSurfaceKHR = null;
     const result = Context.vkCreateXcbSurfaceKHR.?(
-        instance.*,
+        instance,
         &create_info,
         null,
         &surface

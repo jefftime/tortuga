@@ -27,6 +27,12 @@ pub fn alloc(comptime T: type, len: usize) ![]T {
     return result[0..len];
 }
 
+pub fn alloc_zeroed(comptime T: type, len: usize) ![]T {
+    const result = try alloc(T, len);
+    @memset(@ptrCast([*]u8, result.ptr), 0, @sizeOf(T) * len);
+    return result;
+}
+
 pub fn new(comptime T: type) !*T {
     return @ptrCast(*T, alloc_internal(T, 1));
 }

@@ -1,11 +1,8 @@
 const std = @import("std");
 const c = @import("c").c;
-const dealloc = @import("mem").dealloc;
-
-const WindowError = error {
-    BadConnection,
-    InternAtom
-};
+const mem = @import("mem");
+const alloc_zeroed = mem.alloc_zeroed;
+const dealloc = mem.dealloc;
 
 pub const Window = struct {
     cn: *c.xcb_connection_t,
@@ -16,12 +13,12 @@ pub const Window = struct {
     width: u16,
     height: u16,
 
-    pub fn init(title: []const u8, width: u16, height: u16) WindowError!Window {
+    pub fn init(title: []const u8, width: u16, height: u16) !Window {
         // Initial setup
         var screen_index: c_int = undefined;
         const cn = c.xcb_connect(null, &screen_index) orelse {
-            std.log.err("could not establish xcb connection", .{});
-            return WindowError.BadConnection;
+            std.log.err("could not establish XCB connection", .{});
+            return error.BadConnection;
         };
 
         const setup = c.xcb_get_setup(cn);
@@ -35,8 +32,22 @@ pub const Window = struct {
 
         // Window
         const wn: c.xcb_window_t = c.xcb_generate_id(cn);
-        const mask: u32 = c.XCB_CW_EVENT_MASK;
-        const values = [_]u32 { c.XCB_EVENT_MASK_STRUCTURE_NOTIFY };
+        const mask: u32 = c.XCB_CW_BACK_PIXEL | c.XCB_CW_EVENT_MASK;
+        const values = try alloc_zeroed(u32, 32);
+        defer dealloc(values.ptr);
+        values[0] = screen.*.black_pixel;
+        values[1] = c.XCB_EVENT_MASK_KEY_RELEASE
+            | c.XCB_EVENT_MASK_EXPOSURE
+            | c.XCB_EVENT_MASK_KEY_PRESS
+            | c.XCB_EVENT_MASK_STRUCTURE_NOTIFY
+            | c.XCB_EVENT_MASK_POINTER_MOTION
+            | c.XCB_EVENT_MASK_BUTTON_PRESS
+            | c.XCB_EVENT_MASK_BUTTON_RELEASE;
+
+        // const values = [_]u32 {
+        //     screen.*.black_pixel,
+        //     c.XCB_EVENT_MASK_KEY_RELEASE | c.XCB_EVENT_MASK_EXPOSURE
+        // };
         _ = c.xcb_create_window(
             cn,
             c.XCB_COPY_FROM_PARENT,
@@ -48,9 +59,9 @@ pub const Window = struct {
             c.XCB_WINDOW_CLASS_INPUT_OUTPUT,
             screen.*.root_visual,
             mask,
-            &values
+            values.ptr
         );
-        _  =c.xcb_change_property(
+        _ = c.xcb_change_property(
             cn,
             c.XCB_PROP_MODE_REPLACE,
             wn,
@@ -70,7 +81,7 @@ pub const Window = struct {
             wm_protocols
         );
         var protocol = c.xcb_intern_atom_reply(cn, protocol_ck, null) orelse {
-            return WindowError.InternAtom;
+            return error.InternAtom;
         };
         defer dealloc(protocol);
 
@@ -82,7 +93,7 @@ pub const Window = struct {
             wm_delete_window
         );
         var delete = c.xcb_intern_atom_reply(cn, delete_ck, null) orelse {
-            return WindowError.InternAtom;
+            return error.InternAtom;
         };
         defer dealloc(delete);
 
@@ -101,7 +112,23 @@ pub const Window = struct {
         _ = c.xcb_map_window(cn, wn);
         _ = c.xcb_flush(cn);
 
-        std.log.info("xcb connection established!", .{});
+        std.log.info("XCB connection established!", .{});
+
+        const coords = [_]u32 { 100, 100 };
+        _ = c.xcb_configure_window(
+            cn,
+            wn,
+            c.XCB_CONFIG_WINDOW_X | c.XCB_CONFIG_WINDOW_Y,
+            &coords
+        );
+        _ = c.xcb_flush(cn);
+
+        var e = c.xcb_wait_for_event(cn);
+        while (e != null) : (e = c.xcb_wait_for_event(cn)) {
+            if (e.*.response_type & 0x7f == c.XCB_EXPOSE) break;
+            dealloc(e);
+        }
+
         return Window {
             .cn = cn,
             .wn = wn,
@@ -114,15 +141,15 @@ pub const Window = struct {
     }
 
     pub fn deinit(self: *const Window) void {
-        std.log.info("closing xcb connection", .{});
+        std.log.info("closing XCB connection", .{});
+        _ = c.xcb_destroy_window(self.cn, self.wn);
         c.xcb_disconnect(self.cn);
     }
 
     pub fn update(self: *Window) void {
         var event = c.xcb_poll_for_event(self.*.cn);
         while (event != null) : (event = c.xcb_poll_for_event(self.*.cn)) {
-            const inverse_mask: u32 = 0x80;
-            switch (event.*.response_type & ~inverse_mask) {
+            switch (event.*.response_type & 0x7f) {
                 // Resize
                 c.XCB_CONFIGURE_NOTIFY => {
                     var e = @ptrCast(*c.xcb_configure_notify_event_t, event);

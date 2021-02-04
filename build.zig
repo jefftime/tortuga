@@ -18,9 +18,6 @@ pub fn build(b: *Builder) void {
     exe.setBuildMode(mode);
     exe.addIncludeDir("/usr/include");
     exe.addLibPath("/usr/lib/x86_64-linux-gnu");
-    exe.addObjectFile("./lib/libXau.a");
-    exe.addObjectFile("./lib/libXdmcp.a");
-    exe.addObjectFile("./lib/libxcb.a");
     if (builtin.os.tag == .linux) {
         exe.linkSystemLibrary("dl");
     }
@@ -50,6 +47,13 @@ pub fn build(b: *Builder) void {
     exe.addPackage(window_pkg);
     exe.addPackage(render_pkg);
     exe.linkLibC();
+    exe.linkSystemLibrary("xcb");
+
+    if (mode == .Debug) {
+        // For some reason exe.linkSystemLibrary("asan") doesn't work :/
+        // exe.addObjectFile("/usr/lib/x86_64-linux-gnu/libasan.so.5");
+    }
+
     exe.install();
 
     const run_cmd = exe.run();
