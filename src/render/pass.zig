@@ -4,22 +4,23 @@ const Device = @import("device.zig").Device;
 const memory_zig = @import("memory.zig");
 const Memory = memory_zig.Memory;
 const Buffer = memory_zig.Buffer;
-
-pub const BindingType = enum {
-    Float32 = 4,
-    Float64 = 8,
-    Vec2 = 8,
-    Vec3 = 12,
-    Vec4 = 16
-};
-
-pub const Binding = struct {
-    index: u32,
-    size: u32,
-    binding_type: BindingType
-};
+const binding_zig = @import("binding.zig");
+const Binding = binding_zig.Binding;
+const attribute_zig = @import("attribute.zig");
+const Shader = @import("shader.zig").Shader;
 
 pub const PassBuilder = struct {
+    // TODO: Implement multiple stages
+    // const MAX_STAGES = 16;
+
+    // const Stage = struct {
+    //     bindings: []const Binding,
+    //     vertex_shader: Shader,
+    //     fragment_shader: Shader
+    // };
+    // const stages_buf: [MAX_STAGES]Stage = undefined;
+    // const stages: ?[]Stage = null;
+
     device: *Device,
     uniform_memory: ?Memory,
 
@@ -34,19 +35,18 @@ pub const PassBuilder = struct {
         self.uniform_memory = memory;
     }
 
-    pub fn add_stage(self: *PassBuilder) void {
-    }
-
-    pub fn with_bindings(
+    pub fn create(
         self: *PassBuilder,
-        vertex_size: u32,
-        bindings: []Binding
-    ) void {
-        
-    }
-
-    pub fn create(self: *PassBuilder) !Pass {
-        return Pass.init(self.device);
+        pass: *Pass,
+        vshader: Shader,
+        fshader: Shader
+    ) !void {
+        pass.* = try Pass.init(
+            self.device,
+            self.uniform_memory,
+            vshader,
+            fshader
+        );
     }
 };
 
@@ -62,29 +62,34 @@ pub const Pass = struct {
     // framebuffers: []c.VkFramebuffer,
     command_pool: c.VkCommandPool,
     // command_buffers: []c.VkCommandBuffer,
-    // uniform_memory: Memory,
+    uniform_memory: ?Memory,
     // vertices: Buffer,
     // indices: Buffer,
     // uniforms: []Buffer
+    vshader: Shader,
+    fshader: Shader,
 
-    pub fn init(device: *Device) !Pass {
-        // var uniform_memory = try Memory.init(
-        //     device,
-        //     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        //     1 * 1024            // 1 MB
-        // );
-        // errdefer uniform_memory.deinit();
-
+    pub fn init(
+        device: *Device,
+        uniform_memory: ?Memory,
+        vshader: Shader,
+        fshader: Shader
+    ) !Pass {
         const command_pool = try create_command_pool(device);
         errdefer Device.vkDestroyCommandPool.?(device, command_pool, null);
 
         return Pass {
             .device = device,
-            .command_pool = command_pool
+            .command_pool = command_pool,
+            .uniform_memory = uniform_memory,
+            .vshader = vshader,
+            .fshader = fshader
         };
     }
 
-    pub fn deinit(self: *Pass) void {
+    pub fn deinit(self: *const Pass) void {
+        self.vshader.deinit();
+        self.fshader.deinit();
         Device.vkDestroyCommandPool.?(
             self.device.device,
             self.command_pool,

@@ -1,7 +1,9 @@
 pub const std = @import("std");
 pub const c = @import("c").c;
 pub const Context = @import("context.zig").Context;
+pub const Shader = @import("shader.zig").Shader;
 pub const Memory = @import("memory.zig").Memory;
+pub const Binding = @import("binding.zig").Binding;
 pub const mem = @import("mem");
 pub const alloc = mem.alloc;
 pub const dealloc = mem.dealloc;
@@ -19,12 +21,10 @@ pub const DeviceBuilder = struct {
         };
     }
 
-    pub fn create(self: *DeviceBuilder) !Device {
+    pub fn create(self: *DeviceBuilder, device: *Device) !void {
         const id = self.device_id orelse return error.NoDeviceSelected;
-        var device = try Device.init(self.context, id);
+        device.* = try Device.init(self.context, id);
         if (self.memory_size) |size| try device.set_memory(size);
-
-        return device;
     }
 
     pub fn with_device(self: *DeviceBuilder, device_id: u32) void {
@@ -240,6 +240,42 @@ pub const Device = struct {
             self.swapchain
         );
     }
+
+    pub fn create_shader(
+        self: *const Device,
+        bindings: ?[]const Binding,
+        src: []const u8
+    ) !Shader {
+        if (src.len % 4 != 0) return error.BadShaderSrc;
+
+        const shader_data = @ptrCast(
+            [*]const u32,
+            @alignCast(@alignOf([*]const u32), src.ptr)
+        )[0..src.len/4];
+
+        const create_info = c.VkShaderModuleCreateInfo {
+            .sType =
+                c.VkStructureType.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+            // The VkShaderModuleCreateInfo wants the length of the SPIR-V
+            // bytecode in BYTES, so we're using the original `src` variable
+            // here to get the byte length. We use the `shader_data` variable
+            // since `.pCode` asks for an array of `uint32_t`s
+            .codeSize = src.len,
+            .pCode = shader_data.ptr
+        };
+
+        var module: c.VkShaderModule = undefined;
+        const result = Device.vkCreateShaderModule.?(
+            self.device,
+            &create_info,
+            null,
+            &module
+        );
+
+        return Shader.init(self, bindings, module);
+    }
 };
 
 fn get_queue_information(
@@ -267,7 +303,7 @@ fn get_queue_information(
     while (i < n_props) : (i += 1) {
         const queue_count = props[i].queueCount;
         const graphics_support =
-            props[i].queueFlags & @intCast(u32, c.VK_QUEUE_GRAPHICS_BIT);
+            props[i].queueFlags & @as(u32, c.VK_QUEUE_GRAPHICS_BIT);
 
         if (queue_count > 0 and graphics_support != 0) {
             graphics_set = true;

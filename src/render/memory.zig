@@ -2,6 +2,8 @@ const std = @import("std");
 const c = @import("c").c;
 const Device = @import("device.zig").Device;
 
+pub const Buffer = struct {};
+
 pub const Memory = struct {
     device: *const Device,
     size: usize,
@@ -76,6 +78,64 @@ pub const Memory = struct {
         Device.vkDestroyBuffer.?(self.device.device, self.buffer, null);
         Device.vkFreeMemory.?(self.device.device, self.memory, null);
         std.log.info("destroying Memory", .{});
+    }
+
+    pub fn reset(self: *Memory) void {
+        self.offset = 0;
+    }
+
+    pub fn create_buffer(
+        self: *Memory,
+        alignment: usize,
+        usage: u32,
+        size: usize
+    ) !Buffer {
+        const create_info = c.VkBufferCreateInfo {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+            .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
+            .size = size,
+            .usage = usage,
+        };
+
+        var buffer: c.VkBuffer = undefined;
+        var result = Device.vkCreateBuffer.?(
+            self.device.device,
+            &create_info,
+            null,
+            &buffer
+        );
+        if (result != c.VkResult.VK_SUCCESS) return error.BadBuffer;
+        errdefer Device.vkDestroyBuffer(self.device.device, buffer, null);
+
+        var reqs: c.VkMemoryRequirements = undefined;
+        Device.vkGetBufferMemoryRequirements.?(
+            self.device.device,
+            buffer,
+            &reqs
+        );
+
+        const alignment =
+            if (alignment < reqs.alignment) reqs.alignment else alignment;
+        const next_offset =
+            if (self.offset % alignment == 0) self.offset
+            else self.offset + (alignment - (self.offset % alignment));
+        result = Device.vkBindBufferMemory.?(
+            self.device.device,
+            buffer,
+            self.memory,
+            next_offset
+        );
+        if (result != c.VkResult.VK_SUCCESS) return error.BadBufferBind;
+
+        self.offset = next_offset + size;
+        return Buffer {
+            .offset = next_offset,
+            .size = size,
+            .memory = self,
+            .buffer = buffer
+        };
     }
 };
 

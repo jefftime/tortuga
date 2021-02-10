@@ -3,6 +3,7 @@ pub const std = @import("std");
 
 pub const c = @cImport({
     // libc
+    @cInclude("stdio.h");
     @cInclude("stdlib.h");
     @cInclude("errno.h");
     @cInclude("string.h");

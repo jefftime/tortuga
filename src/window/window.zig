@@ -77,7 +77,7 @@ pub const Window = struct {
         var protocol_ck = c.xcb_intern_atom(
             cn,
             0,
-            @intCast(u16, wm_protocols.len),
+            @as(u16, wm_protocols.len),
             wm_protocols
         );
         var protocol = c.xcb_intern_atom_reply(cn, protocol_ck, null) orelse {
@@ -89,7 +89,7 @@ pub const Window = struct {
         var delete_ck = c.xcb_intern_atom(
             cn,
             0,
-            @intCast(u16, wm_delete_window.len),
+            @as(u16, wm_delete_window.len),
             wm_delete_window
         );
         var delete = c.xcb_intern_atom_reply(cn, delete_ck, null) orelse {

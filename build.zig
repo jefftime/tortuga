@@ -41,11 +41,17 @@ pub fn build(b: *Builder) void {
         .path = "./src/render/render.zig",
         .dependencies = &[_]Pkg {window_pkg, c_pkg, mem_pkg}
     };
+    const util_pkg = Pkg {
+        .name = "util",
+        .path = "./src/util/util.zig",
+        .dependencies = &[_]Pkg {c_pkg, mem_pkg}
+    };
 
     exe.addPackage(c_pkg);
     exe.addPackage(mem_pkg);
     exe.addPackage(window_pkg);
     exe.addPackage(render_pkg);
+    exe.addPackage(util_pkg);
     exe.linkLibC();
     exe.linkSystemLibrary("xcb");
 
