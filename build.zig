@@ -13,15 +13,6 @@ pub fn build(b: *Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("tortuga", "src/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
-    exe.addIncludeDir("/usr/include");
-    exe.addLibPath("/usr/lib/x86_64-linux-gnu");
-    if (builtin.os.tag == .linux) {
-        exe.linkSystemLibrary("dl");
-    }
-
     const c_pkg = Pkg {
         .name = "c",
         .path = "./src/c/c.zig"
@@ -47,6 +38,11 @@ pub fn build(b: *Builder) void {
         .dependencies = &[_]Pkg {c_pkg, mem_pkg}
     };
 
+    const exe = b.addExecutable("tortuga", "src/main.zig");
+    exe.setTarget(target);
+    exe.setBuildMode(mode);
+    exe.addIncludeDir("/usr/include");
+    exe.addLibPath("/usr/lib/x86_64-linux-gnu");
     exe.addPackage(c_pkg);
     exe.addPackage(mem_pkg);
     exe.addPackage(window_pkg);
@@ -54,6 +50,9 @@ pub fn build(b: *Builder) void {
     exe.addPackage(util_pkg);
     exe.linkLibC();
     exe.linkSystemLibrary("xcb");
+    if (builtin.os.tag == .linux) {
+        exe.linkSystemLibrary("dl");
+    }
 
     if (mode == .Debug) {
         // For some reason exe.linkSystemLibrary("asan") doesn't work :/

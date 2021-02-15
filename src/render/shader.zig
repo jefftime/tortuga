@@ -5,13 +5,20 @@ const mem = @import("mem");
 const alloc = mem.alloc;
 const dealloc = mem.dealloc;
 
+pub const ShaderKind = enum {
+    Vertex,
+    Fragment
+};
+
 pub const Shader = struct {
     device: *const Device,
     shader: c.VkShaderModule,
     bindings: ?[]Binding,
+    kind: ShaderKind,
 
     pub fn init(
         device: *const Device,
+        kind: ShaderKind,
         input_bindings: ?[]const Binding,
         shader: c.VkShaderModule
     ) !Shader {
@@ -29,6 +36,7 @@ pub const Shader = struct {
 
         return Shader {
             .device = device,
+            .kind = kind,
             .shader = shader,
             .bindings = bindings
         };

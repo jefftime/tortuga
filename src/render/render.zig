@@ -12,5 +12,6 @@ const binding = @import("binding.zig");
 pub const Binding = binding.Binding;
 
 const shader = @import("shader.zig");
+pub const ShaderKind = shader.ShaderKing;
 pub const Shader = shader.Shader;
 

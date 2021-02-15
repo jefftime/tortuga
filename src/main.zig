@@ -20,8 +20,16 @@ fn create_render_pass(pass: *Pass, device: *Device) !void {
     const fsrc = try read_file("shaders/frag.spv");
     defer dealloc(fsrc.ptr);
 
-    const vshader = try device.create_shader(&[_]Binding {.Vec3, .Vec3}, vsrc);
-    const fshader = try device.create_shader(null, fsrc);
+    const vshader = try device.create_shader(
+        .Vertex,
+        &[_]Binding { .Vec3, .Vec3 },
+        vsrc
+    );
+    const fshader = try device.create_shader(
+        .Fragment,
+        null,
+        fsrc
+    );
 
     try pass_builder.create(pass, vshader, fshader);
 }

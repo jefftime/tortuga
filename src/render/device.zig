@@ -1,7 +1,9 @@
 pub const std = @import("std");
 pub const c = @import("c").c;
 pub const Context = @import("context.zig").Context;
-pub const Shader = @import("shader.zig").Shader;
+pub const shader_zig = @import("shader.zig");
+pub const ShaderKind = shader_zig.ShaderKind;
+pub const Shader = shader_zig.Shader;
 pub const Memory = @import("memory.zig").Memory;
 pub const Binding = @import("binding.zig").Binding;
 pub const mem = @import("mem");
@@ -243,6 +245,7 @@ pub const Device = struct {
 
     pub fn create_shader(
         self: *const Device,
+        kind: ShaderKind,
         bindings: ?[]const Binding,
         src: []const u8
     ) !Shader {
@@ -274,7 +277,7 @@ pub const Device = struct {
             &module
         );
 
-        return Shader.init(self, bindings, module);
+        return Shader.init(self, kind, bindings, module);
     }
 };
 

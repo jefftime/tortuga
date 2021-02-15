@@ -2,7 +2,64 @@ const std = @import("std");
 const c = @import("c").c;
 const Device = @import("device.zig").Device;
 
-pub const Buffer = struct {};
+pub const Buffer = struct {
+    memory: *Memory,
+    offset: usize,
+    buffer: c.VkBuffer,
+
+    pub fn init(memory: *Memory, offset: usize, buffer: c.VkBuffer) Buffer {
+        return Buffer {
+            .memory = memory,
+            .offset = offset,
+            .buffer = buffer
+        };
+    }
+
+    pub fn deinit(self: *const Buffer) void {
+        Device.vkDestroyBuffer.?(self.memory.device.device, self.buffer, null);
+    }
+
+    pub fn write(self: *Buffer, comptime T: type, in_data: []const T) !void {
+        const data = @ptrCast(
+            [*]const u8,
+            @alignCast(@alignOf([*]const T), in_data.ptr)
+        )[0..in_data.len/@sizeOf(T)];
+
+        const alignment = self.memory.device.props.limits.nonCoherentAtomSize;
+        const begin = self.offset - (self.offset % alignment);
+        const len = data.len + (alignment - (data.len % alignment));
+        const range = c.VkMappedMemoryRange {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+            .pNext = null,
+            .memory = self.memory.memory,
+            .offset = begin,
+            .size = len,
+        };
+
+        var dst: [*]u8 = undefined;
+        var result = Device.vkMapMemory.?(
+            self.memory.device.device,
+            range.memory,
+            range.offset,
+            range.size,
+            0,
+            @ptrCast([*c]?*c_void, &dst)
+        );
+        if (result != c.VkResult.VK_SUCCESS) return error.BadVulkanMemoryMap;
+        @memcpy(dst + (self.offset - begin), @ptrCast([*]const u8, data), len);
+        _ = Device.vkFlushMappedMemoryRanges.?(
+            self.memory.device.device,
+            1,
+            &range
+        );
+        _ = Device.vkInvalidateMappedMemoryRanges.?(
+            self.memory.device.device,
+            1,
+            &range
+        );
+        Device.vkUnmapMemory.?(self.memory.device.device, self.memory.memory);
+    }
+};
 
 pub const Memory = struct {
     device: *const Device,
@@ -80,23 +137,21 @@ pub const Memory = struct {
         std.log.info("destroying Memory", .{});
     }
 
-    pub fn reset(self: *Memory) void {
-        self.offset = 0;
-    }
-
     pub fn create_buffer(
         self: *Memory,
         alignment: usize,
-        usage: u32,
+        usage: c.VkBufferUsageFlags,
         size: usize
     ) !Buffer {
         const create_info = c.VkBufferCreateInfo {
             .sType = c.VkStructureType.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .pNext = null,
             .flags = 0,
-            .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
-            .size = size,
+            .sharingMode = c.VkSharingMode.VK_SHARING_MODE_EXCLUSIVE,
             .usage = usage,
+            .size = size,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = null
         };
 
         var buffer: c.VkBuffer = undefined;
@@ -107,7 +162,7 @@ pub const Memory = struct {
             &buffer
         );
         if (result != c.VkResult.VK_SUCCESS) return error.BadBuffer;
-        errdefer Device.vkDestroyBuffer(self.device.device, buffer, null);
+        errdefer Device.vkDestroyBuffer.?(self.device.device, buffer, null);
 
         var reqs: c.VkMemoryRequirements = undefined;
         Device.vkGetBufferMemoryRequirements.?(
@@ -116,11 +171,14 @@ pub const Memory = struct {
             &reqs
         );
 
-        const alignment =
-            if (alignment < reqs.alignment) reqs.alignment else alignment;
-        const next_offset =
-            if (self.offset % alignment == 0) self.offset
-            else self.offset + (alignment - (self.offset % alignment));
+        var buf_align =
+            if (alignment < reqs.alignment) reqs.alignment
+            else alignment;
+        var next_offset = self.offset;
+        if (self.offset % buf_align != 0) {
+            next_offset = self.offset + (buf_align - (self.offset % buf_align));
+        }
+
         result = Device.vkBindBufferMemory.?(
             self.device.device,
             buffer,
@@ -128,14 +186,13 @@ pub const Memory = struct {
             next_offset
         );
         if (result != c.VkResult.VK_SUCCESS) return error.BadBufferBind;
-
         self.offset = next_offset + size;
-        return Buffer {
-            .offset = next_offset,
-            .size = size,
-            .memory = self,
-            .buffer = buffer
-        };
+
+        return Buffer.init(self, self.offset, buffer);
+    }
+
+    pub fn reset(self: *Memory) void {
+        self.offset = 0;
     }
 };
 
