@@ -269,7 +269,7 @@ pub const Device = struct {
     pub fn create_shader(
         self: *const Device,
         kind: ShaderKind,
-        bindings: ?[]const Binding,
+        bindings: ?[]const []const Binding,
         src: []const u8
     ) !Shader {
         if (src.len % 4 != 0) return error.BadShaderSrc;

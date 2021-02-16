@@ -503,47 +503,6 @@ fn create_render_pass(device: *const Device) !c.VkRenderPass {
     return render_pass;
 }
 
-fn generate_vertex_info(
-    src_bindings: []const Binding,
-    out_attrs: []c.VkVertexInputAttributeDescription,
-    out_bindings: *c.VkVertexInputBindingDescription
-) !void {
-    if (src_bindings.len > out_attrs.len) return error.TooManyBindings;
-
-    // TODO: Eventually we need to iterating over a double slice of bindings
-
-    var stride: u32 = 0;
-    for (src_bindings) |binding| {
-        stride += switch (binding) {
-            .Vec3 => @as(u32, @sizeOf(f32)) * 3,
-            else => return error.NotImplemented
-        };
-    }
-    out_bindings.* = c.VkVertexInputBindingDescription {
-        .binding = 0,
-        .stride = stride,
-        .inputRate = c.VkVertexInputRate.VK_VERTEX_INPUT_RATE_VERTEX,
-    };
-
-    var offset: u32 = 0;
-    for (src_bindings) |binding, i| {
-        switch (binding) {
-            .Vec3 => {
-                out_attrs[i] = c.VkVertexInputAttributeDescription {
-                    .location = @intCast(u32, i),
-                    .binding = 0,
-                    .format = c.VkFormat.VK_FORMAT_R32G32B32_SFLOAT,
-                    .offset = offset
-                };
-
-                offset += @sizeOf(f32) * 3;
-            },
-
-            else => return error.NotImplemented
-        }
-    }
-}
-
 fn create_pipeline(
     device: *Device,
     descriptor_layouts: []c.VkDescriptorSetLayout,
@@ -575,27 +534,15 @@ fn create_pipeline(
         }
     };
 
-    // TODO: This needs to be reworked to allow multiple bindings
-    const MAX_ATTRS = 16;
-    const MAX_BINDINGS = 16;
-    const n_attrs: u32 = @intCast(u32, vshader.bindings.?.len);
-    const n_bindings: u32 = 1;
-    var attrs: [MAX_ATTRS]c.VkVertexInputAttributeDescription = undefined;
-    var bindings: [MAX_BINDINGS]c.VkVertexInputBindingDescription = undefined;
-    try generate_vertex_info(
-        vshader.bindings.?,
-        &attrs,
-        &bindings[0],
-    );
     const vertex_info = c.VkPipelineVertexInputStateCreateInfo {
         .sType = c.VkStructureType
             .VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = null,
         .flags = 0,
-        .vertexBindingDescriptionCount = n_bindings,
-        .pVertexBindingDescriptions = &bindings,
-        .vertexAttributeDescriptionCount = n_attrs,
-        .pVertexAttributeDescriptions = &attrs
+        .vertexBindingDescriptionCount = @intCast(u32, vshader.bindings.?.len),
+        .pVertexBindingDescriptions = vshader.bindings.?.ptr,
+        .vertexAttributeDescriptionCount = @intCast(u32, vshader.attrs.?.len),
+        .pVertexAttributeDescriptions = vshader.attrs.?.ptr,
     };
 
     const assembly_info = c.VkPipelineInputAssemblyStateCreateInfo {

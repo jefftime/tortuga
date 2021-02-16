@@ -10,6 +10,7 @@ pub const c = @cImport({
 
     // XCB
     @cInclude("xcb/xcb.h");
+    @cInclude("xcb/xfixes.h");
 
     // Vulkan
     @cDefine("VK_NO_PROTOTYPES", {});

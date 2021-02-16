@@ -22,7 +22,7 @@ fn create_render_pass(pass: *Pass, device: *Device) !void {
 
     const vshader = try device.create_shader(
         .Vertex,
-        &[_]Binding { .Vec3, .Vec3 },
+        &[_][]const Binding { &[_]Binding { .Vec3, .Vec3 } },
         vsrc
     );
     const fshader = try device.create_shader(
@@ -38,7 +38,7 @@ fn create_render_pass(pass: *Pass, device: *Device) !void {
 pub fn main() anyerror!void {
     // TODO: parse args
 
-    var window = try Window.init("Tortuga", 640, 480);
+    var window = try Window.init("Tortuga", 960, 720);
     defer window.deinit();
 
     var context = try Context.init(&window, null);

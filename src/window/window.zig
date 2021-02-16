@@ -33,21 +33,17 @@ pub const Window = struct {
         // Window
         const wn: c.xcb_window_t = c.xcb_generate_id(cn);
         const mask: u32 = c.XCB_CW_BACK_PIXEL | c.XCB_CW_EVENT_MASK;
-        const values = try alloc_zeroed(u32, 32);
-        defer dealloc(values.ptr);
-        values[0] = screen.*.black_pixel;
-        values[1] = c.XCB_EVENT_MASK_KEY_RELEASE
-            | c.XCB_EVENT_MASK_EXPOSURE
-            | c.XCB_EVENT_MASK_KEY_PRESS
-            | c.XCB_EVENT_MASK_STRUCTURE_NOTIFY
-            | c.XCB_EVENT_MASK_POINTER_MOTION
-            | c.XCB_EVENT_MASK_BUTTON_PRESS
-            | c.XCB_EVENT_MASK_BUTTON_RELEASE;
+        const values = [_]u32 {
+            screen.*.black_pixel,
+            c.XCB_EVENT_MASK_KEY_RELEASE
+                | c.XCB_EVENT_MASK_EXPOSURE
+                | c.XCB_EVENT_MASK_KEY_PRESS
+                | c.XCB_EVENT_MASK_STRUCTURE_NOTIFY
+                | c.XCB_EVENT_MASK_POINTER_MOTION
+                | c.XCB_EVENT_MASK_BUTTON_PRESS
+                | c.XCB_EVENT_MASK_BUTTON_RELEASE
+        };
 
-        // const values = [_]u32 {
-        //     screen.*.black_pixel,
-        //     c.XCB_EVENT_MASK_KEY_RELEASE | c.XCB_EVENT_MASK_EXPOSURE
-        // };
         _ = c.xcb_create_window(
             cn,
             c.XCB_COPY_FROM_PARENT,
@@ -59,7 +55,7 @@ pub const Window = struct {
             c.XCB_WINDOW_CLASS_INPUT_OUTPUT,
             screen.*.root_visual,
             mask,
-            values.ptr
+            &values
         );
         _ = c.xcb_change_property(
             cn,
@@ -121,6 +117,22 @@ pub const Window = struct {
             c.XCB_CONFIG_WINDOW_X | c.XCB_CONFIG_WINDOW_Y,
             &coords
         );
+
+        // Cursor
+        const xfixes_cookie = c.xcb_xfixes_query_version(cn, 4, 0);
+        var xfixes_err: ?*c.xcb_generic_error_t = null;
+        const xfixes_reply = c.xcb_xfixes_query_version_reply(
+            cn,
+            xfixes_cookie,
+            &xfixes_err
+        );
+        if (xfixes_err != null) {
+            std.log.err("incompatible XFixes version: {}", .{xfixes_err});
+            return error.BadXFixesVersion;
+        }
+        defer dealloc(xfixes_reply);
+        _ = c.xcb_xfixes_hide_cursor(cn, wn);
+
         _ = c.xcb_flush(cn);
 
         var e = c.xcb_wait_for_event(cn);
@@ -128,6 +140,7 @@ pub const Window = struct {
             if (e.*.response_type & 0x7f == c.XCB_EXPOSE) break;
             dealloc(e);
         }
+
 
         return Window {
             .cn = cn,
@@ -142,6 +155,7 @@ pub const Window = struct {
 
     pub fn deinit(self: *const Window) void {
         std.log.info("closing XCB connection", .{});
+        _ = c.xcb_xfixes_show_cursor(self.cn, self.wn);
         _ = c.xcb_destroy_window(self.cn, self.wn);
         c.xcb_disconnect(self.cn);
     }

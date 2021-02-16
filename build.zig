@@ -50,6 +50,7 @@ pub fn build(b: *Builder) void {
     exe.addPackage(util_pkg);
     exe.linkLibC();
     exe.linkSystemLibrary("xcb");
+    exe.linkSystemLibrary("xcb-xfixes");
     if (builtin.os.tag == .linux) {
         exe.linkSystemLibrary("dl");
     }
