@@ -108,6 +108,8 @@ pub const Device = struct {
     features: c.VkPhysicalDeviceFeatures,
     mem_props: c.VkPhysicalDeviceMemoryProperties,
     device: c.VkDevice,
+    surface_format: c.VkSurfaceFormatKHR,
+    swap_extent: c.VkExtent2D,
     swapchain: ?c.VkSwapchainKHR,
     swapchain_images: []c.VkImage,
     image_semaphore: c.VkSemaphore,
@@ -131,7 +133,7 @@ pub const Device = struct {
             &mem_props
         );
 
-        std.log.info("selecting device `{}`", .{props.deviceName});
+        std.log.info("selecting device `{s}`", .{props.deviceName});
 
         var graphics_index: u32 = 0;
         var present_index: u32 = 0;
@@ -154,9 +156,27 @@ pub const Device = struct {
         std.log.info("created Vulkan device!", .{});
 
         try load_device_functions(device);
+
+        const surface_format = try select_format(
+            physical_device,
+            context.surface
+        );
+
+        var caps: c.VkSurfaceCapabilitiesKHR = undefined;
+        var result = Context.vkGetPhysicalDeviceSurfaceCapabilitiesKHR.?(
+            physical_device,
+            context.surface,
+            &caps
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            return error.BadSurfaceCapabilities;
+        }
+
         const swapchain = try create_swapchain(
             physical_device,
             device,
+            &caps,
+            surface_format,
             context.surface
         );
         const swapchain_images = try get_swapchain_images(device, swapchain);
@@ -189,6 +209,8 @@ pub const Device = struct {
             .features = features,
             .mem_props = mem_props,
             .device = device,
+            .surface_format = surface_format,
+            .swap_extent = caps.currentExtent,
             .swapchain = swapchain,
             .swapchain_images = swapchain_images,
             .image_semaphore = image_semaphore,
@@ -226,6 +248,7 @@ pub const Device = struct {
         self.swapchain = create_swapchain(
             self.physical_device,
             self.device,
+            self.context.surface_format,
             self.context.surface
         ) catch |err| {
             std.log.err("could not recreate swapchain", .{});
@@ -390,7 +413,7 @@ fn create_device(
 }
 
 fn load(prefix: c.VkDevice, comptime symbol: []const u8) !void {
-    std.log.info("loading device function `{}`", .{symbol});
+    std.log.info("loading device function `{s}`", .{symbol});
     const result = Context.vkGetDeviceProcAddr.?(prefix, symbol.ptr)
         orelse return error.BadFunctionLoad;
 
@@ -449,33 +472,18 @@ fn load_device_functions(device: c.VkDevice) !void {
     try load(device, "vkQueueWaitIdle");
 }
 
-fn choose_format(formats: []c.VkSurfaceFormatKHR) c.VkSurfaceFormatKHR {
-    // TODO: Make an intelligent decision lol
-    std.log.info("select surface format {}", .{formats[0]});
-    return formats[0];
-}
-
 fn choose_present_mode(modes: []c.VkPresentModeKHR) c.VkPresentModeKHR {
     // This is guaranteed to be supported, but we should have the ability to
     // change based on preference
     return c.VkPresentModeKHR.VK_PRESENT_MODE_FIFO_KHR;
 }
 
-fn create_swapchain(
+fn select_format(
     physical_device: c.VkPhysicalDevice,
-    device: c.VkDevice,
     surface: c.VkSurfaceKHR
-) !c.VkSwapchainKHR {
-    var caps: c.VkSurfaceCapabilitiesKHR = undefined;
-    var result = Context.vkGetPhysicalDeviceSurfaceCapabilitiesKHR.?(
-        physical_device,
-        surface,
-        &caps
-    );
-    if (result != c.VkResult.VK_SUCCESS) return error.BadSurfaceCapabilities;
-
+) !c.VkSurfaceFormatKHR {
     var n_formats: u32 = 0;
-    result = Context.vkGetPhysicalDeviceSurfaceFormatsKHR.?(
+    var result = Context.vkGetPhysicalDeviceSurfaceFormatsKHR.?(
         physical_device,
         surface,
         &n_formats,
@@ -493,8 +501,20 @@ fn create_swapchain(
     );
     if (result != c.VkResult.VK_SUCCESS) return error.BadSurfaceFormats;
 
+    // TODO: Make an intelligent decision lol
+    std.log.info("select surface format {}", .{formats[0]});
+    return formats[0];
+}
+
+fn create_swapchain(
+    physical_device: c.VkPhysicalDevice,
+    device: c.VkDevice,
+    caps: *const c.VkSurfaceCapabilitiesKHR,
+    surface_format: c.VkSurfaceFormatKHR,
+    surface: c.VkSurfaceKHR
+) !c.VkSwapchainKHR {
     var n_present_modes: u32 = 0;
-    result = Context.vkGetPhysicalDeviceSurfacePresentModesKHR.?(
+    var result = Context.vkGetPhysicalDeviceSurfacePresentModesKHR.?(
         physical_device,
         surface,
         &n_present_modes,
@@ -512,15 +532,14 @@ fn create_swapchain(
     );
     if (result != c.VkResult.VK_SUCCESS) return error.BadSurfacePresentModes;
 
-    const selected_format = choose_format(formats);
     const create_info = c.VkSwapchainCreateInfoKHR {
         .sType = c.VkStructureType.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .pNext = null,
         .flags = 0,
         .surface = surface,
         .minImageCount = caps.minImageCount,
-        .imageFormat = selected_format.format,
-        .imageColorSpace = selected_format.colorSpace,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
         .imageExtent = caps.currentExtent,
         .imageArrayLayers = 1,
         .imageUsage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,

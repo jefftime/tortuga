@@ -60,7 +60,7 @@ pub const Context = struct {
         defer dealloc(supported_layers.ptr);
         var standard_validation_layer = false;
         for (supported_layers) |layer| {
-            std.log.info("found supported layer {}", .{layer.layerName});
+            std.log.info("found supported layer {s}", .{layer.layerName});
             const layer_match = c.strcmp(
                 &layer.layerName,
                 "VK_LAYER_LUNARG_standard_validation"
@@ -82,7 +82,10 @@ pub const Context = struct {
         var xcb_ext = false;
         var surface_ext = false;
         for (supported_exts) |ext| {
-            std.log.info("found supported extension {}", .{ext.extensionName});
+            std.log.info(
+                "found supported extension {s}",
+                .{ext.extensionName}
+            );
 
             if (c.strcmp(&ext.extensionName, "VK_KHR_surface") != 0) {
                 surface_ext = true;
@@ -115,7 +118,10 @@ pub const Context = struct {
         for (physical_devices) |device| {
             var properties: c.VkPhysicalDeviceProperties = undefined;
             vkGetPhysicalDeviceProperties.?(device, &properties);
-            std.log.info("found physical device `{}`", .{properties.deviceName});
+            std.log.info(
+                "found physical device `{s}`",
+                .{properties.deviceName}
+            );
         }
 
         return Context {
@@ -144,7 +150,7 @@ fn load_vulkan(libpath: ?[]const u8) !*const c_void {
 
     const vk_handle = if (builtin.os.tag == .linux) handle: {
         const handle = c.dlopen(@ptrCast([*c]const u8, path), c.RTLD_NOW) orelse {
-            std.log.err("could not open libpath: {}", .{libpath});
+            std.log.err("could not open libpath: {s}", .{libpath});
             return error.BadPath;
         };
 
@@ -165,7 +171,7 @@ fn load_vulkan(libpath: ?[]const u8) !*const c_void {
 }
 
 fn load(prefix: ?c.VkInstance, comptime symbol: []const u8) !void {
-    std.log.info("loading instance function `{}`", .{symbol});
+    std.log.info("loading instance function `{s}`", .{symbol});
     const result = if (prefix) |p| a: {
         break :a Context.get_proc.?(p, symbol.ptr)
             orelse return error.BadFunctionLoad;

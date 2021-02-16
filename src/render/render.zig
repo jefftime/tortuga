@@ -8,6 +8,10 @@ const pass = @import("pass.zig");
 pub const PassBuilder = pass.PassBuilder;
 pub const Pass = pass.Pass;
 
+pub const memory_zig = @import("memory.zig");
+pub const Memory = memory_zig.Memory;
+pub const Buffer = memory_zig.Buffer;
+
 const binding = @import("binding.zig");
 pub const Binding = binding.Binding;
 

@@ -22,7 +22,8 @@ pub const Buffer = struct {
     pub fn write(self: *Buffer, comptime T: type, in_data: []const T) !void {
         const data = @ptrCast(
             [*]const u8,
-            @alignCast(@alignOf([*]const T), in_data.ptr)
+            @alignCast(4, in_data.ptr)
+            // @alignCast(@alignOf([*]const T), in_data.ptr)
         )[0..in_data.len/@sizeOf(T)];
 
         const alignment = self.memory.device.props.limits.nonCoherentAtomSize;

@@ -31,6 +31,7 @@ fn create_render_pass(pass: *Pass, device: *Device) !void {
         fsrc
     );
 
+    pass_builder.with_uniform_memory(1 * 1024 * 1024);
     try pass_builder.create(pass, vshader, fshader);
 }
 

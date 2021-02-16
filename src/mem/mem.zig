@@ -34,7 +34,7 @@ pub fn alloc_zeroed(comptime T: type, len: usize) ![]T {
 }
 
 pub fn new(comptime T: type) !*T {
-    return @ptrCast(*T, alloc_internal(T, 1));
+    return @ptrCast(*T, try alloc_internal(T, 1));
 }
 
 pub fn dealloc(ptr: anytype) void { c.free(ptr); }
