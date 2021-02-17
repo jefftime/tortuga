@@ -85,16 +85,6 @@ pub const PassBuilder = struct {
 
 pub const Pass = struct {
     device: *Device,
-    // descriptor_pool: c.VkDescriptorPool,
-    // descriptor_layouts: []c.VkDescriptorSetLayout,
-    // descriptor_sets: []c.VkDescriptorSet,
-    // render_pass: c.VkRenderPass,
-    // pipeline: c.VkPipeline,
-    // pipeline_layout: c.VkPipelineLayout,
-    // image_views: []c.VkImageView,
-    // framebuffers: []c.VkFramebuffer,
-    command_pool: c.VkCommandPool,
-    // command_buffers: []c.VkCommandBuffer,
     uniform_memory: ?*Memory,
     vshader: Shader,
     fshader: Shader,
@@ -102,10 +92,15 @@ pub const Pass = struct {
     indices: Buffer,
     descriptor_layouts: []c.VkDescriptorSetLayout,
     descriptor_pool: c.VkDescriptorPool,
+    descriptor_sets: []c.VkDescriptorSet,
     uniforms: []Buffer,
     pipeline_layout: c.VkPipelineLayout,
     render_pass: c.VkRenderPass,
     pipeline: c.VkPipeline,
+    image_views: []c.VkImageView,
+    framebuffers: []c.VkFramebuffer,
+    command_pool: c.VkCommandPool,
+    command_buffers: []c.VkCommandBuffer,
 
     // TODO: change arguments `vshader` and `fshader` to a single slice of
     // Shaders
@@ -115,29 +110,22 @@ pub const Pass = struct {
         vshader: Shader,
         fshader: Shader
     ) !Pass {
-        const command_pool = try create_command_pool(device);
-        errdefer Device.vkDestroyCommandPool.?(
-            device.device,
-            command_pool,
-            null
-        );
-
         var vertices: Buffer = undefined;
         var indices: Buffer = undefined;
         try create_vertex_data(device, &vertices, &indices);
         errdefer vertices.deinit();
         errdefer indices.deinit();
 
-        const descriptor_layout_bindings: []const c.VkDescriptorSetLayoutBinding
-            = &[_]c.VkDescriptorSetLayoutBinding {
-                c.VkDescriptorSetLayoutBinding {
-                    .binding = 0,
-                    .descriptorType =
-                        c.VkDescriptorType.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                    .descriptorCount = 1,
-                    .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
-                    .pImmutableSamplers = null
-                }
+        const T = c.VkDescriptorSetLayoutBinding;
+        const descriptor_layout_bindings: []const T = &[_]T {
+            T {
+                .binding = 0,
+                .descriptorType =
+                    c.VkDescriptorType.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
+                .pImmutableSamplers = null
+            }
         };
         const descriptor_layout_info = c.VkDescriptorSetLayoutCreateInfo {
             .sType = c.VkStructureType
@@ -168,6 +156,21 @@ pub const Pass = struct {
             null
         );
 
+        var descriptor_sets = try create_descriptor_sets(
+            device,
+            descriptor_pool,
+            descriptor_layouts
+        );
+        errdefer {
+            _ = Device.vkFreeDescriptorSets.?(
+                device.device,
+                descriptor_pool,
+                @intCast(u32, descriptor_sets.len),
+                descriptor_sets.ptr
+            );
+            dealloc(descriptor_sets.ptr);
+        }
+
         // TODO: Make this optional
         if (uniform_memory == null) return error.NoUniformMemory;
         var uniforms = try create_uniform_buffers(uniform_memory.?);
@@ -185,6 +188,9 @@ pub const Pass = struct {
             };
             try u.write(Uniforms, &[_]Uniforms { data });
         }
+
+        write_descriptor_sets(device, descriptor_sets, uniforms);
+
 
         var pipeline_layout = try create_pipeline_layout(
             device,
@@ -209,9 +215,65 @@ pub const Pass = struct {
         );
         errdefer Device.vkDestroyPipeline.?(device.device, pipeline, null);
 
+        var image_views = try create_image_views(device);
+        errdefer {
+            for (image_views) |image| Device.vkDestroyImageView.?(
+                device.device,
+                image,
+                null
+            );
+            dealloc(image_views.ptr);
+        }
+
+        var framebuffers = try create_framebuffers(
+            device,
+            render_pass,
+            image_views
+        );
+        errdefer {
+            for (framebuffers) |fb| Device.vkDestroyFramebuffer.?(
+                device.device,
+                fb,
+                null
+            );
+            dealloc(framebuffers.ptr);
+        }
+
+        const command_pool = try create_command_pool(device);
+        errdefer Device.vkDestroyCommandPool.?(
+            device.device,
+            command_pool,
+            null
+        );
+
+        const command_buffers = try create_command_buffers(
+            device,
+            command_pool
+        );
+        errdefer {
+            Device.vkFreeCommandBuffers.?(
+                device.device,
+                command_pool,
+                @intCast(u32, command_buffers.len),
+                command_buffers.ptr
+            );
+            dealloc(command_buffers.ptr);
+        }
+
+        try write_command_buffers(
+            device,
+            vertices,
+            indices,
+            pipeline_layout,
+            pipeline,
+            render_pass,
+            framebuffers,
+            descriptor_sets,
+            command_buffers
+        );
+
         return Pass {
             .device = device,
-            .command_pool = command_pool,
             .uniform_memory = uniform_memory,
             .vshader = vshader,
             .fshader = fshader,
@@ -219,14 +281,33 @@ pub const Pass = struct {
             .indices = indices,
             .descriptor_layouts = descriptor_layouts,
             .descriptor_pool = descriptor_pool,
+            .descriptor_sets = descriptor_sets,
             .uniforms = uniforms,
             .pipeline_layout = pipeline_layout,
             .render_pass = render_pass,
-            .pipeline = pipeline
+            .pipeline = pipeline,
+            .image_views = image_views,
+            .framebuffers = framebuffers,
+            .command_pool = command_pool,
+            .command_buffers = command_buffers,
         };
     }
 
     pub fn deinit(self: *const Pass) void {
+        for (self.framebuffers) |fb| Device.vkDestroyFramebuffer.?(
+            self.device.device,
+            fb,
+            null
+        );
+        dealloc(self.framebuffers.ptr);
+
+        for (self.image_views) |image| Device.vkDestroyImageView.?(
+            self.device.device,
+            image,
+            null
+        );
+        dealloc(self.image_views.ptr);
+
         Device.vkDestroyPipeline.?(
             self.device.device,
             self.pipeline,
@@ -250,6 +331,14 @@ pub const Pass = struct {
             um.deinit();
         }
 
+        _ = Device.vkFreeDescriptorSets.?(
+            self.device.device,
+            self.descriptor_pool,
+            @intCast(u32, self.descriptor_sets.len),
+            self.descriptor_sets.ptr
+        );
+        dealloc(self.descriptor_sets.ptr);
+
         std.log.info("destroy descriptor pool", .{});
         Device.vkDestroyDescriptorPool.?(
             self.device.device,
@@ -270,6 +359,14 @@ pub const Pass = struct {
         self.indices.deinit();
         self.vshader.deinit();
         self.fshader.deinit();
+
+        Device.vkFreeCommandBuffers.?(
+            self.device.device,
+            self.command_pool,
+            @intCast(u32, self.command_buffers.len),
+            self.command_buffers.ptr
+        );
+        dealloc(self.command_buffers.ptr);
         Device.vkDestroyCommandPool.?(
             self.device.device,
             self.command_pool,
@@ -277,27 +374,66 @@ pub const Pass = struct {
         );
         std.log.info("destroying Pass", .{});
     }
+
+    pub fn update(self: *Pass) void {
+        var image_index: u32 = undefined;
+        var result = Device.vkAcquireNextImageKHR.?(
+            self.device.device,
+            self.device.swapchain.?,
+            2_000_000_000,
+            self.device.image_semaphore,
+            null,
+            &image_index
+        );
+        if (result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR) {
+            // TODO
+            return;
+        }
+
+        const wait_stages = &[_]c.VkPipelineStageFlags {
+            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+        };
+        const submit_info = c.VkSubmitInfo {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = null,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &self.device.image_semaphore,
+            .pWaitDstStageMask = wait_stages,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &self.command_buffers[image_index],
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &self.device.render_semaphore
+        };
+        result = Device.vkQueueSubmit.?(
+            self.device.graphics_queue,
+            1,
+            &submit_info,
+            null
+        );
+        if (
+            result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR
+                or result == c.VkResult.VK_SUBOPTIMAL_KHR
+        ) {
+            // TODO
+        }
+
+        const present_info = c.VkPresentInfoKHR {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .pNext = null,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &self.device.render_semaphore,
+            .swapchainCount = 1,
+            .pSwapchains = &self.device.swapchain.?,
+            .pImageIndices = &image_index,
+            .pResults = null
+        };
+        _ = Device.vkQueuePresentKHR.?(
+            self.device.present_queue,
+            &present_info
+        );
+        _ = Device.vkQueueWaitIdle.?(self.device.present_queue);
+    }
 };
-
-fn create_command_pool(device: *Device) !c.VkCommandPool {
-    const create_info = c.VkCommandPoolCreateInfo {
-        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = null,
-        .flags = 0,
-        .queueFamilyIndex = device.graphics_index,
-    };
-
-    var pool: c.VkCommandPool = undefined;
-    const result = Device.vkCreateCommandPool.?(
-        device.device,
-        &create_info,
-        null,
-        &pool
-    );
-    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
-
-    return pool;
-}
 
 fn create_vertex_data(
     device: *Device,
@@ -317,12 +453,12 @@ fn create_vertex_data(
         out_verts.* = try m.create_buffer(
             16,
             c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            vertex_data.len
+            vertex_data.len * @sizeOf(f32)
         );
         out_indices.* = try m.create_buffer(
             16,
             c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            index_data.len
+            index_data.len * @sizeOf(u16)
         );
     } else {
         return error.NoDeviceMemory;
@@ -374,7 +510,7 @@ fn create_descriptor_pool(device: *const Device) !c.VkDescriptorPool {
         .sType =
             c.VkStructureType.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = null,
-        .flags = 0,
+        .flags = c.VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         .maxSets = @intCast(u32, device.swapchain_images.len),
         .poolSizeCount = 1,
         .pPoolSizes = &size
@@ -390,6 +526,68 @@ fn create_descriptor_pool(device: *const Device) !c.VkDescriptorPool {
     if (result != c.VkResult.VK_SUCCESS) return error.BadDescriptorPool;
 
     return pool;
+}
+
+fn create_descriptor_sets(
+    device: *const Device,
+    descriptor_pool: c.VkDescriptorPool,
+    descriptor_layouts: []const c.VkDescriptorSetLayout
+) ![]c.VkDescriptorSet {
+    var sets = try alloc(c.VkDescriptorSet, descriptor_layouts.len);
+    errdefer dealloc(sets.ptr);
+
+    const alloc_info = c.VkDescriptorSetAllocateInfo {
+        .sType = c.VkStructureType
+            .VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = null,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = @intCast(u32, descriptor_layouts.len),
+        .pSetLayouts = descriptor_layouts.ptr
+    };
+
+    const result = Device.vkAllocateDescriptorSets.?(
+        device.device,
+        &alloc_info,
+        sets.ptr
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadDescriptionSet;
+
+    return sets;
+}
+
+fn write_descriptor_sets(
+    device: *const Device,
+    descriptor_sets: []c.VkDescriptorSet,
+    uniforms: []Buffer
+) void {
+    for (descriptor_sets) |ds, i| {
+        const buffer_info = c.VkDescriptorBufferInfo {
+            .buffer = uniforms[i].buffer,
+            .offset = 0,
+            .range = @intCast(u32, @sizeOf(Uniforms))
+        };
+        const write_info = c.VkWriteDescriptorSet {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = null,
+            .dstSet = ds,
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorType =
+                c.VkDescriptorType.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .pBufferInfo = &buffer_info,
+            .pImageInfo = null,
+            .pTexelBufferView = null
+        };
+
+        Device.vkUpdateDescriptorSets.?(
+            device.device,
+            1,
+            &write_info,
+            0,
+            null
+        );
+    }
 }
 
 fn create_uniform_buffers(memory: *Memory) ![]Buffer {
@@ -710,4 +908,223 @@ fn create_pipeline(
     if (result != c.VkResult.VK_SUCCESS) return error.BadGraphicsPipeline;
 
     return pipeline;
+}
+
+fn create_image_views(device: *const Device) ![]c.VkImageView {
+    var image_views = try alloc(c.VkImageView, device.swapchain_images.len);
+    for (device.swapchain_images) |image, i| {
+        const create_info = c.VkImageViewCreateInfo {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+            .image = image,
+            .viewType = c.VkImageViewType.VK_IMAGE_VIEW_TYPE_2D,
+            .format = device.surface_format.format,
+            .components = c.VkComponentMapping {
+                .r = c.VkComponentSwizzle.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = c.VkComponentSwizzle.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = c.VkComponentSwizzle.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = c.VkComponentSwizzle.VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = c.VkImageSubresourceRange {
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1
+            }
+        };
+
+        const result = Device.vkCreateImageView.?(
+            device.device,
+            &create_info,
+            null,
+            &image_views[i]
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            var ii = i;
+            while (ii != 0) : (ii -= 1) Device.vkDestroyImageView.?(
+                device.device,
+                image_views[ii - 1],
+                null
+            );
+            return error.BadImageView;
+        }
+    }
+
+    return image_views;
+}
+
+fn create_framebuffers(
+    device: *const Device,
+    render_pass: c.VkRenderPass,
+    image_views: []const c.VkImageView
+) ![]c.VkFramebuffer {
+    var framebuffers = try alloc(c.VkFramebuffer, image_views.len);
+    errdefer dealloc(framebuffers.ptr);
+
+    for (image_views) |image, i| {
+        const create_info = c.VkFramebufferCreateInfo {
+            .sType =
+                c.VkStructureType.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+            .renderPass = render_pass,
+            .attachmentCount = 1,
+            .pAttachments = &image,
+            .width = device.swap_extent.width,
+            .height = device.swap_extent.height,
+            .layers = 1
+        };
+
+        const result = Device.vkCreateFramebuffer.?(
+            device.device,
+            &create_info,
+            null,
+            &framebuffers[i]
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            var ii = i;
+            while (ii > 0) : (ii -= 1) Device.vkDestroyFramebuffer.?(
+                device.device,
+                framebuffers[ii - 1],
+                null
+            );
+            return error.BadFramebuffer;
+        }
+    }
+
+    return framebuffers;
+}
+
+fn create_command_pool(device: *Device) !c.VkCommandPool {
+    const create_info = c.VkCommandPoolCreateInfo {
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = null,
+        .flags = 0,
+        .queueFamilyIndex = device.graphics_index,
+    };
+
+    var pool: c.VkCommandPool = undefined;
+    const result = Device.vkCreateCommandPool.?(
+        device.device,
+        &create_info,
+        null,
+        &pool
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
+
+    return pool;
+}
+
+fn create_command_buffers(
+    device: *const Device,
+    command_pool: c.VkCommandPool
+) ![]c.VkCommandBuffer {
+    var command_buffers = try alloc(
+        c.VkCommandBuffer,
+        device.swapchain_images.len
+    );
+    errdefer dealloc(command_buffers.ptr);
+
+    const alloc_info = c.VkCommandBufferAllocateInfo {
+        .sType =
+            c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = null,
+        .commandPool = command_pool,
+        .level = c.VkCommandBufferLevel.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = @intCast(u32, device.swapchain_images.len)
+    };
+    const result = Device.vkAllocateCommandBuffers.?(
+        device.device,
+        &alloc_info,
+        command_buffers.ptr
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandBuffers;
+
+    return command_buffers;
+}
+
+fn write_command_buffers(
+    device: *const Device,
+    vertices: Buffer,
+    indices: Buffer,
+    pipeline_layout: c.VkPipelineLayout,
+    pipeline: c.VkPipeline,
+    render_pass: c.VkRenderPass,
+    framebuffers: []c.VkFramebuffer,
+    descriptor_sets: []c.VkDescriptorSet,
+    command_buffers: []c.VkCommandBuffer,
+) !void {
+    const begin_info = c.VkCommandBufferBeginInfo {
+        .sType =
+            c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = null,
+        .flags = 0,
+        .pInheritanceInfo = null
+    };
+
+    for (command_buffers) |buf, i| {
+        var result = Device.vkBeginCommandBuffer.?(buf, &begin_info);
+        if (result != c.VkResult.VK_SUCCESS) return error.BadCommandBufferBegin;
+
+        const clear_value = c.VkClearValue {
+            .color = c.VkClearColorValue {
+                .float32 = [_]f32 { 0, 0, 1, 0 }
+            }
+        };
+        const render_info = c.VkRenderPassBeginInfo {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .pNext = null,
+            .renderPass = render_pass,
+            .framebuffer = framebuffers[i],
+            .renderArea = c.VkRect2D {
+                .offset = c.VkOffset2D { .x = 0, .y = 0 },
+                .extent = device.swap_extent
+            },
+            .clearValueCount = 1,
+            .pClearValues = &clear_value
+        };
+
+        Device.vkCmdBeginRenderPass.?(
+            buf,
+            &render_info,
+            c.VkSubpassContents.VK_SUBPASS_CONTENTS_INLINE
+        );
+        {
+            Device.vkCmdBindPipeline.?(
+                buf,
+                c.VkPipelineBindPoint.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline
+            );
+            Device.vkCmdBindDescriptorSets.?(
+                buf,
+                c.VkPipelineBindPoint.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline_layout,
+                0,
+                1,
+                &descriptor_sets[i],
+                0,
+                null
+            );
+            const offsets = &[_]c.VkDeviceSize { 0 };
+            Device.vkCmdBindVertexBuffers.?(
+                buf,
+                0,
+                1,
+                &vertices.buffer,
+                offsets
+            );
+            Device.vkCmdBindIndexBuffer.?(
+                buf,
+                indices.buffer,
+                0,
+                c.VkIndexType.VK_INDEX_TYPE_UINT16
+            );
+            Device.vkCmdDrawIndexed.?(buf, 6, 1, 0, 0, 0);
+        }
+        Device.vkCmdEndRenderPass.?(buf);
+        result = Device.vkEndCommandBuffer.?(buf);
+        if (result != c.VkResult.VK_SUCCESS) return error.BadCommandBufferWrite;
+    }
 }

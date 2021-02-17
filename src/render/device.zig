@@ -236,7 +236,8 @@ pub const Device = struct {
     }
 
     pub fn set_memory(self: *Device, size: usize) !void {
-        const usage = c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+        const usage =
+            c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
             | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
         self.memory = try Memory.init(self, usage, size);
     }

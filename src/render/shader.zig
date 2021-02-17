@@ -81,6 +81,7 @@ pub const Shader = struct {
     }
 
     pub fn deinit(self: *const Shader) void {
+        if (self.attrs) |a| dealloc(a.ptr);
         if (self.bindings) |b| dealloc(b.ptr);
         Device.vkDestroyShaderModule.?(self.device.device, self.shader, null);
     }

@@ -62,5 +62,6 @@ pub fn main() anyerror!void {
     while (true) {
         if (window.should_close()) break;
         window.update();
+        pass.update();
     }
 }
