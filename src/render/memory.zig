@@ -2,6 +2,12 @@ const std = @import("std");
 const c = @import("c").c;
 const Device = @import("device.zig").Device;
 
+pub const MemoryUsage = enum(u32) {
+    Uniform = c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+    Vertex = c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+    Index = c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+};
+
 pub const Buffer = struct {
     memory: *Memory,
     offset: usize,
@@ -19,7 +25,11 @@ pub const Buffer = struct {
         Device.vkDestroyBuffer.?(self.memory.device.device, self.buffer, null);
     }
 
-    pub fn write(self: *Buffer, comptime T: type, in_data: []const T) !void {
+    pub fn write(
+        self: *Buffer,
+        comptime T: type,
+        in_data: []const T
+    ) !void {
         const alignment = self.memory.device.props.limits.nonCoherentAtomSize;
         const begin = self.offset - (self.offset % alignment);
         const size = in_data.len * @sizeOf(T);

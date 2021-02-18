@@ -9,6 +9,9 @@ pub fn build(b: *Builder) void {
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
 
+    const asan_enabled =
+        b.option(bool, "asan", "Link with libasan") orelse false;
+
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
@@ -30,7 +33,7 @@ pub fn build(b: *Builder) void {
     const render_pkg = Pkg {
         .name = "render",
         .path = "./src/render/render.zig",
-        .dependencies = &[_]Pkg {window_pkg, c_pkg, mem_pkg}
+        .dependencies = &[_]Pkg {c_pkg, window_pkg, mem_pkg}
     };
     const util_pkg = Pkg {
         .name = "util",
@@ -55,9 +58,9 @@ pub fn build(b: *Builder) void {
         exe.linkSystemLibrary("dl");
     }
 
-    if (mode == .Debug) {
+    if (mode == .Debug and asan_enabled) {
         // For some reason exe.linkSystemLibrary("asan") doesn't work :/
-        // exe.addObjectFile("/usr/lib/x86_64-linux-gnu/libasan.so.5");
+        exe.addObjectFile("/usr/lib/x86_64-linux-gnu/libasan.so.5");
     }
 
     exe.install();
@@ -68,4 +71,14 @@ pub fn build(b: *Builder) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const shader_cmd = b.addSystemCommand(&[_][]const u8 {
+        "glslangValidator",
+        "-V",
+        "default.frag",
+        "default.vert"
+    });
+    shader_cmd.cwd = "./shaders";
+    const shader_step = b.step("shaders", "Build the shaders");
+    shader_step.dependOn(&shader_cmd.step);
 }

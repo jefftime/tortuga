@@ -5,6 +5,7 @@ const dealloc = mem_zig.dealloc;
 const builtin = @import("builtin");
 const c = @import("c").c;
 const Window = @import("window").Window;
+const Device = @import("device.zig").Device;
 
 pub const Context = struct {
     pub var get_proc: c.PFN_vkGetInstanceProcAddr = undefined;
@@ -46,7 +47,11 @@ pub const Context = struct {
     surface: c.VkSurfaceKHR,
     devices: []c.VkPhysicalDevice, // TODO: Abstract this out
 
-    pub fn init(window: *const Window, libpath: ?[]const u8) !Context {
+    pub fn init(
+        out_context: *Context,
+        window: *const Window,
+        libpath: ?[]const u8,
+    ) !void {
         const extensions = [_][*c]const u8 {
             c.VK_KHR_SURFACE_EXTENSION_NAME,
             c.VK_KHR_XCB_SURFACE_EXTENSION_NAME
@@ -124,7 +129,7 @@ pub const Context = struct {
             );
         }
 
-        return Context {
+        out_context.* = Context {
             .window = window,
             .vk_handle = null,
             .instance = instance,
@@ -138,6 +143,16 @@ pub const Context = struct {
         vkDestroySurfaceKHR.?(self.instance, self.surface, null);
         vkDestroyInstance.?(self.instance, null);
         std.log.info("destroying Context", .{});
+    }
+
+    pub fn create_device(
+        self: *const Context,
+        device_id: usize,
+        mem_size: usize,
+        out_device: *Device
+    ) !void {
+        try out_device.init(self, device_id);
+        try out_device.set_memory(mem_size);
     }
 };
 

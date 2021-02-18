@@ -13,7 +13,12 @@ pub const Window = struct {
     width: u16,
     height: u16,
 
-    pub fn init(title: []const u8, width: u16, height: u16) !Window {
+    pub fn init(
+        out_window: *Window,
+        title: []const u8,
+        width: u16,
+        height: u16
+    ) !void {
         // Initial setup
         var screen_index: c_int = undefined;
         const cn = c.xcb_connect(null, &screen_index) orelse {
@@ -142,7 +147,7 @@ pub const Window = struct {
         }
 
 
-        return Window {
+        out_window.* = Window {
             .cn = cn,
             .wn = wn,
             .win_delete = win_delete,

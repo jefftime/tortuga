@@ -1,43 +1,44 @@
 pub const std = @import("std");
 pub const c = @import("c").c;
 pub const Context = @import("context.zig").Context;
-pub const shader_zig = @import("shader.zig");
-pub const ShaderKind = shader_zig.ShaderKind;
-pub const Shader = shader_zig.Shader;
-pub const Memory = @import("memory.zig").Memory;
+pub const ShaderGroup = @import("shader.zig").ShaderGroup;
+pub const memory_zig = @import("memory.zig");
+pub const MemoryUsage = memory_zig.MemoryUsage;
+pub const Memory = memory_zig.Memory;
 pub const Binding = @import("binding.zig").Binding;
+pub const Pass = @import("pass.zig").Pass;
 pub const mem = @import("mem");
 pub const alloc = mem.alloc;
 pub const dealloc = mem.dealloc;
 
-pub const DeviceBuilder = struct {
-    context: *const Context,
-    device_id: ?u32,
-    memory_size: ?usize,
+// pub const DeviceBuilder = struct {
+//     context: *const Context,
+//     device_id: ?u32,
+//     memory_size: ?usize,
 
-    pub fn init(context: *const Context) DeviceBuilder {
-        return DeviceBuilder {
-            .context = context,
-            .device_id = null,
-            .memory_size = null
-        };
-    }
+//     pub fn init(context: *const Context) DeviceBuilder {
+//         return DeviceBuilder {
+//             .context = context,
+//             .device_id = null,
+//             .memory_size = null
+//         };
+//     }
 
-    pub fn create(self: *DeviceBuilder, device: *Device) !void {
-        const id = self.device_id orelse return error.NoDeviceSelected;
-        device.* = try Device.init(self.context, id);
-        if (self.memory_size) |size| try device.set_memory(size);
-    }
+//     pub fn create(self: *DeviceBuilder, device: *Device) !void {
+//         const id = self.device_id orelse return error.NoDeviceSelected;
+//         device.* = try Device.init(self.context, id);
+//         if (self.memory_size) |size| try device.set_memory(size);
+//     }
 
-    pub fn with_device(self: *DeviceBuilder, device_id: u32) void {
-        self.device_id = device_id;
-    }
+//     pub fn with_device(self: *DeviceBuilder, device_id: u32) void {
+//         self.device_id = device_id;
+//     }
 
-    pub fn with_memory(self: *DeviceBuilder, size: usize) void {
-        self.memory_size = size;
-    }
+//     pub fn with_memory(self: *DeviceBuilder, size: usize) void {
+//         self.memory_size = size;
+//     }
 
-};
+// };
 
 pub const Device = struct {
     pub var vkGetDeviceQueue: c.PFN_vkGetDeviceQueue = undefined;
@@ -120,7 +121,11 @@ pub const Device = struct {
     present_index: u32,
     memory: ?Memory,
 
-    pub fn init(context: *const Context, device_id: usize) !Device {
+    pub fn init(
+        out_device: *Device,
+        context: *const Context,
+        device_id: usize
+    ) !void {
         const physical_device = context.devices[device_id];
         var props: c.VkPhysicalDeviceProperties = undefined;
         var features: c.VkPhysicalDeviceFeatures = undefined;
@@ -202,7 +207,7 @@ pub const Device = struct {
             &present_queue
         );
 
-        return Device {
+        out_device.* = Device {
             .context = context,
             .physical_device = device_id,
             .props = props,
@@ -236,6 +241,11 @@ pub const Device = struct {
     }
 
     pub fn set_memory(self: *Device, size: usize) !void {
+        // return try self.create_memory(
+        //     c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+        //         | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        //     size
+        // );
         const usage =
             c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
             | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
@@ -269,39 +279,52 @@ pub const Device = struct {
 
     pub fn create_shader(
         self: *const Device,
-        kind: ShaderKind,
+        uniform_memory: *Memory,
+        comptime uniform_type: type,
         bindings: ?[]const []const Binding,
-        src: []const u8
-    ) !Shader {
-        if (src.len % 4 != 0) return error.BadShaderSrc;
+        vertex_src: []const u8,
+        fragment_src: []const u8,
+        out_shader: *ShaderGroup
+    ) !void {
+        if (vertex_src.len % 4 != 0) return error.BadShaderSrc;
+        if (fragment_src.len % 4 != 0) return error.BadShaderSrc;
 
-        const shader_data = @ptrCast(
+        const vertex_shader_src = @ptrCast(
             [*]const u32,
-            @alignCast(@alignOf([*]const u32), src.ptr)
-        )[0..src.len/4];
+            @alignCast(@alignOf([*]const u32), vertex_src.ptr)
+        )[0..vertex_src.len/4];
+        const fragment_shader_src = @ptrCast(
+            [*]const u32,
+            @alignCast(@alignOf([*]const u32), fragment_src.ptr)
+        )[0..fragment_src.len/4];
 
-        const create_info = c.VkShaderModuleCreateInfo {
-            .sType =
-                c.VkStructureType.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .pNext = null,
-            .flags = 0,
-            // The VkShaderModuleCreateInfo wants the length of the SPIR-V
-            // bytecode in BYTES, so we're using the original `src` variable
-            // here to get the byte length. We use the `shader_data` variable
-            // since `.pCode` asks for an array of `uint32_t`s
-            .codeSize = src.len,
-            .pCode = shader_data.ptr
-        };
+        const vmodule = try create_shader_module(self, vertex_shader_src);
+        const fmodule = try create_shader_module(self, fragment_shader_src);
 
-        var module: c.VkShaderModule = undefined;
-        const result = Device.vkCreateShaderModule.?(
-            self.device,
-            &create_info,
-            null,
-            &module
+        out_shader.* = try ShaderGroup.init(
+            self,
+            uniform_memory,
+            uniform_type,
+            bindings,
+            vmodule,
+            fmodule
         );
+    }
 
-        return Shader.init(self, kind, bindings, module);
+    pub fn create_memory(
+        self: *Device,
+        usage: MemoryUsage,
+        size: usize
+    ) !Memory {
+        return try Memory.init(self, @enumToInt(usage), size);
+    }
+
+    pub fn create_pass(
+        self: *Device,
+        shader: *const ShaderGroup,
+        out_pass: *Pass
+    ) !void {
+        out_pass.* = try Pass.init(self, shader);
     }
 };
 
@@ -611,4 +634,29 @@ fn create_semaphore(device: c.VkDevice) !c.VkSemaphore {
     if (result != c.VkResult.VK_SUCCESS) return error.BadSemaphore;
 
     return semaphore;
+}
+
+fn create_shader_module(
+    device: *const Device,
+    src: []const u32
+) !c.VkShaderModule {
+    const create_info = c.VkShaderModuleCreateInfo {
+        .sType =
+            c.VkStructureType.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = null,
+        .flags = 0,
+        .codeSize = src.len * @sizeOf(u32), // Size in BYTES
+        .pCode = src.ptr
+    };
+
+    var module: c.VkShaderModule = undefined;
+    const result = Device.vkCreateShaderModule.?(
+        device.device,
+        &create_info,
+        null,
+        &module
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadShaderModule;
+
+    return module;
 }
