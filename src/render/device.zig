@@ -11,35 +11,6 @@ pub const mem = @import("mem");
 pub const alloc = mem.alloc;
 pub const dealloc = mem.dealloc;
 
-// pub const DeviceBuilder = struct {
-//     context: *const Context,
-//     device_id: ?u32,
-//     memory_size: ?usize,
-
-//     pub fn init(context: *const Context) DeviceBuilder {
-//         return DeviceBuilder {
-//             .context = context,
-//             .device_id = null,
-//             .memory_size = null
-//         };
-//     }
-
-//     pub fn create(self: *DeviceBuilder, device: *Device) !void {
-//         const id = self.device_id orelse return error.NoDeviceSelected;
-//         device.* = try Device.init(self.context, id);
-//         if (self.memory_size) |size| try device.set_memory(size);
-//     }
-
-//     pub fn with_device(self: *DeviceBuilder, device_id: u32) void {
-//         self.device_id = device_id;
-//     }
-
-//     pub fn with_memory(self: *DeviceBuilder, size: usize) void {
-//         self.memory_size = size;
-//     }
-
-// };
-
 pub const Device = struct {
     pub var vkGetDeviceQueue: c.PFN_vkGetDeviceQueue = undefined;
     pub var vkCreateSemaphore: c.PFN_vkCreateSemaphore = undefined;
@@ -59,7 +30,8 @@ pub const Device = struct {
     pub var vkDestroyImageView: c.PFN_vkDestroyImageView = undefined;
     pub var vkCreateCommandPool: c.PFN_vkCreateCommandPool = undefined;
     pub var vkDestroyCommandPool: c.PFN_vkDestroyCommandPool = undefined;
-    pub var vkAllocateCommandBuffers: c.PFN_vkAllocateCommandBuffers = undefined;
+    pub var vkAllocateCommandBuffers:
+        c.PFN_vkAllocateCommandBuffers = undefined;
     pub var vkFreeCommandBuffers: c.PFN_vkFreeCommandBuffers = undefined;
     pub var vkBeginCommandBuffer: c.PFN_vkBeginCommandBuffer = undefined;
     pub var vkEndCommandBuffer: c.PFN_vkEndCommandBuffer = undefined;
@@ -77,7 +49,8 @@ pub const Device = struct {
         c.PFN_vkCreateDescriptorSetLayout = undefined;
     pub var vkDestroyDescriptorSetLayout:
         c.PFN_vkDestroyDescriptorSetLayout = undefined;
-    pub var vkAllocateDescriptorSets: c.PFN_vkAllocateDescriptorSets = undefined;
+    pub var vkAllocateDescriptorSets:
+        c.PFN_vkAllocateDescriptorSets = undefined;
     pub var vkFreeDescriptorSets: c.PFN_vkFreeDescriptorSets = undefined;
     pub var vkUpdateDescriptorSets: c.PFN_vkUpdateDescriptorSets = undefined;
     pub var vkCmdBindDescriptorSets: c.PFN_vkCmdBindDescriptorSets = undefined;
@@ -119,12 +92,13 @@ pub const Device = struct {
     present_queue: c.VkQueue,
     graphics_index: u32,
     present_index: u32,
-    memory: ?Memory,
+    memory: Memory,
 
     pub fn init(
         out_device: *Device,
         context: *const Context,
-        device_id: usize
+        device_id: usize,
+        mem_size: usize
     ) !void {
         const physical_device = context.devices[device_id];
         var props: c.VkPhysicalDeviceProperties = undefined;
@@ -224,12 +198,18 @@ pub const Device = struct {
             .present_queue = present_queue,
             .graphics_index = graphics_index,
             .present_index = present_index,
-            .memory = null
+            .memory = undefined
         };
+
+        const usage =
+            c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+            | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+            | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        out_device.memory = try Memory.init(out_device, usage, mem_size);
     }
 
     pub fn deinit(self: *const Device) void {
-        if (self.memory) |m| m.deinit();
+        self.memory.deinit();
         dealloc(self.swapchain_images.ptr);
         Device.vkDestroySemaphore.?(self.device, self.image_semaphore, null);
         Device.vkDestroySemaphore.?(self.device, self.render_semaphore, null);
@@ -241,15 +221,6 @@ pub const Device = struct {
     }
 
     pub fn set_memory(self: *Device, size: usize) !void {
-        // return try self.create_memory(
-        //     c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-        //         | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        //     size
-        // );
-        const usage =
-            c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-            | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-        self.memory = try Memory.init(self, usage, size);
     }
 
     pub fn recreate_swapchain(self: *Device) !void {

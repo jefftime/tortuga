@@ -151,8 +151,7 @@ pub const Context = struct {
         mem_size: usize,
         out_device: *Device
     ) !void {
-        try out_device.init(self, device_id);
-        try out_device.set_memory(mem_size);
+        try out_device.init(self, device_id, mem_size);
     }
 };
 

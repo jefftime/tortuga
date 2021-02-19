@@ -219,18 +219,18 @@ pub const Pass = struct {
                     0,
                     null
                 );
-                const offsets = &[_]c.VkDeviceSize { 0 };
+                const offsets = &[_]c.VkDeviceSize { self.vertices.offset };
                 Device.vkCmdBindVertexBuffers.?(
                     buf,
                     0,
                     1,
-                    &self.vertices.buffer,
+                    &self.vertices.memory.buffer,
                     offsets
                 );
                 Device.vkCmdBindIndexBuffer.?(
                     buf,
-                    self.indices.buffer,
-                    0,
+                    self.indices.memory.buffer,
+                    self.indices.offset,
                     c.VkIndexType.VK_INDEX_TYPE_UINT16
                 );
                 Device.vkCmdDrawIndexed.?(buf, 6, 1, 0, 0, 0);
@@ -316,21 +316,16 @@ fn create_vertex_data(
     };
     const index_data = [_]u16 { 0, 1, 2, 2, 3, 0 };
 
-    // TODO: Don't hard error
-    if (device.memory) |*m| {
-        out_verts.* = try m.create_buffer(
-            16,
-            c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            vertex_data.len * @sizeOf(f32)
-        );
-        out_indices.* = try m.create_buffer(
-            16,
-            c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            index_data.len * @sizeOf(u16)
-        );
-    } else {
-        return error.NoDeviceMemory;
-    }
+    out_verts.* = try device.memory.create_buffer(
+        16,
+        c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        vertex_data.len * @sizeOf(f32)
+    );
+    out_indices.* = try device.memory.create_buffer(
+        16,
+        c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        index_data.len * @sizeOf(u16)
+    );
 
     try out_verts.write(f32, &vertex_data);
     try out_indices.write(u16, &index_data);

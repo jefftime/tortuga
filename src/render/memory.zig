@@ -11,19 +11,15 @@ pub const MemoryUsage = enum(u32) {
 pub const Buffer = struct {
     memory: *Memory,
     offset: usize,
-    buffer: c.VkBuffer,
 
-    pub fn init(memory: *Memory, offset: usize, buffer: c.VkBuffer) Buffer {
+    pub fn init(memory: *Memory, offset: usize) Buffer {
         return Buffer {
             .memory = memory,
-            .offset = offset,
-            .buffer = buffer
+            .offset = offset
         };
     }
 
-    pub fn deinit(self: *const Buffer) void {
-        Device.vkDestroyBuffer.?(self.memory.device.device, self.buffer, null);
-    }
+    pub fn deinit(self: *const Buffer) void {}
 
     pub fn write(
         self: *Buffer,
@@ -80,6 +76,7 @@ pub const Buffer = struct {
 
 pub const Memory = struct {
     device: *const Device,
+    reqs: c.VkMemoryRequirements,
     size: usize,
     offset: usize,
     buffer: c.VkBuffer,
@@ -139,8 +136,17 @@ pub const Memory = struct {
         );
         if (result != c.VkResult.VK_SUCCESS) return error.BadAllocation;
 
+        result = Device.vkBindBufferMemory.?(
+            device.device,
+            buffer,
+            memory,
+            0
+        );
+        if (result != c.VkResult.VK_SUCCESS) return error.BadBufferBind;
+
         return Memory {
             .device = device,
+            .reqs = reqs,
             .size = size,
             .offset = 0,
             .buffer = buffer,
@@ -171,41 +177,17 @@ pub const Memory = struct {
             .pQueueFamilyIndices = null
         };
 
-        var buffer: c.VkBuffer = undefined;
-        var result = Device.vkCreateBuffer.?(
-            self.device.device,
-            &create_info,
-            null,
-            &buffer
-        );
-        if (result != c.VkResult.VK_SUCCESS) return error.BadBuffer;
-        errdefer Device.vkDestroyBuffer.?(self.device.device, buffer, null);
-
-        var reqs: c.VkMemoryRequirements = undefined;
-        Device.vkGetBufferMemoryRequirements.?(
-            self.device.device,
-            buffer,
-            &reqs
-        );
-
         var buf_align =
-            if (alignment < reqs.alignment) reqs.alignment
+            if (alignment < self.reqs.alignment) self.reqs.alignment
             else alignment;
         var next_offset = self.offset;
         if (self.offset % buf_align != 0) {
             next_offset = self.offset + (buf_align - (self.offset % buf_align));
         }
 
-        result = Device.vkBindBufferMemory.?(
-            self.device.device,
-            buffer,
-            self.memory,
-            next_offset
-        );
-        if (result != c.VkResult.VK_SUCCESS) return error.BadBufferBind;
         self.offset = next_offset + size;
 
-        return Buffer.init(self, next_offset, buffer);
+        return Buffer.init(self, next_offset);
     }
 
     pub fn reset(self: *Memory) void {

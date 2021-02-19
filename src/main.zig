@@ -54,11 +54,9 @@ pub fn main() anyerror!void {
     defer dealloc(vsrc.ptr);
     const fsrc = try read_file("shaders/frag.spv");
     defer dealloc(fsrc.ptr);
-    var uniform_memory = try device.create_memory(.Uniform, 1 * 1024 * 1024);
-    defer uniform_memory.deinit();
     var shader: ShaderGroup = undefined;
     try device.create_shader(
-        &uniform_memory,
+        &device.memory,
         Uniforms,
         &[_][]const Binding { &[_] Binding { .Vec3, .Vec3 } },
         vsrc,

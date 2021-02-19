@@ -157,8 +157,8 @@ pub const ShaderGroup = struct {
 
         for (self.descriptor_sets) |set, i| {
             const buffer_info = c.VkDescriptorBufferInfo {
-                .buffer = self.uniforms[i].buffer,
-                .offset = 0,
+                .buffer = self.uniforms[i].memory.buffer,
+                .offset = self.uniforms[i].offset,
                 .range = @intCast(u32, self.uniform_size)
             };
 

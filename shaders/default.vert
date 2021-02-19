@@ -12,5 +12,6 @@ layout (binding = 0) uniform Uniforms {
 
 void main(void) {
   gl_Position = vec4(position, 1.0);
+  // out_color = vec4(color, 1.0);
   out_color = vec4(u.m[0]);
 }
