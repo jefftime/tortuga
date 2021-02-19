@@ -11,23 +11,10 @@ const Pass = Render.Pass;
 const mem = @import("mem");
 const alloc = mem.alloc;
 const dealloc = mem.dealloc;
-
-const Vec3 = extern struct {
-    x: f32,
-    y: f32,
-    z: f32,
-};
-
-const Vec4 = extern struct {
-    x: f32,
-    y: f32,
-    z: f32,
-    w: f32
-};
-
-const Mat4 = extern struct {
-    data: [16]f32 align(16)
-};
+const geometry = @import("math").geometry;
+const Vec3 = geometry.Vec3;
+const Vec4 = geometry.Vec4;
+const Mat4 = geometry.Mat4;
 
 const Uniforms = extern struct {
     color: Vec3,
@@ -64,7 +51,7 @@ pub fn main() anyerror!void {
         &shader
     );
     defer shader.deinit();
-    const data: Uniforms align(16) = Uniforms {
+    const data: Uniforms = Uniforms {
         .m = Mat4 {
             .data = [_]f32 {
                 0, 1, 1, 0,
@@ -73,7 +60,7 @@ pub fn main() anyerror!void {
                 0, 0, 0, 0
             }
         },
-        .color = Vec3 { .x = 0, .y = 0, .z = 0 },
+        .color = Vec3 { .x = 1, .y = 1, .z = 0 },
     };
     try shader.write_uniforms(Uniforms, &data);
 

@@ -20,6 +20,11 @@ pub fn build(b: *Builder) void {
         .name = "c",
         .path = "./src/c/c.zig"
     };
+    const math_pkg = Pkg {
+        .name = "math",
+        .path = "./src/math/math.zig",
+        .dependencies = &[_]Pkg {c_pkg}
+    };
     const mem_pkg = Pkg {
         .name = "mem",
         .path = "./src/mem/mem.zig",
@@ -47,6 +52,7 @@ pub fn build(b: *Builder) void {
     exe.addIncludeDir("/usr/include");
     exe.addLibPath("/usr/lib/x86_64-linux-gnu");
     exe.addPackage(c_pkg);
+    exe.addPackage(math_pkg);
     exe.addPackage(mem_pkg);
     exe.addPackage(window_pkg);
     exe.addPackage(render_pkg);

@@ -30,12 +30,6 @@ pub const Buffer = struct {
         const begin = self.offset - (self.offset % alignment);
         const size = in_data.len * @sizeOf(T);
         const len = size + (alignment - (size % alignment));
-        std.log.info("offset: {} begin: {} size: {} len: {}", .{
-            self.offset,
-            begin,
-            size,
-            len
-        });
         const range = c.VkMappedMemoryRange {
             .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             .pNext = null,
