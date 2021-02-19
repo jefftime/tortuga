@@ -28,14 +28,16 @@ pub const Vec3 = extern struct {
     }
 
     pub fn magnitude(lhs: *const Vec3) f32 {
-        return @sqrt(lhs.x + lhs.y + lhs.z);
+        return @sqrt(
+            (lhs.x * lhs.x) + (lhs.y * lhs.y) + (lhs.z * lhs.z)
+        );
     }
 
     pub fn normalize(lhs: *Vec3) void {
-        const magnitude = lhs.magnitude();
-        lhs.x.* = lhs.x / magnitude;
-        lhs.y.* = lhs.y / magnitude;
-        lhs.z.* = lhs.z / magnitude;
+        const mag = lhs.magnitude();
+        lhs.x = lhs.x / mag;
+        lhs.y = lhs.y / mag;
+        lhs.z = lhs.z / mag;
     }
 
     pub fn normal(lhs: *const Vec3) Vec3 {
