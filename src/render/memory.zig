@@ -5,7 +5,11 @@ const Device = @import("device.zig").Device;
 pub const MemoryUsage = enum(u32) {
     Uniform = c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
     Vertex = c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-    Index = c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+    Index = c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+
+    pub fn value(self: *const MemoryUsage) u32 {
+        return @enumToInt(self.*);
+    }
 };
 
 pub const Buffer = struct {
@@ -157,7 +161,7 @@ pub const Memory = struct {
     pub fn create_buffer(
         self: *Memory,
         alignment: usize,
-        usage: c.VkBufferUsageFlags,
+        usage: u32,
         size: usize
     ) !Buffer {
         const create_info = c.VkBufferCreateInfo {

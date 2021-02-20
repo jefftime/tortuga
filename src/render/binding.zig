@@ -7,15 +7,15 @@ pub const Binding = enum(u8) {
     Mat3,
     Mat4,
 
-    pub fn width(self: BindingType) u8 {
-        return switch (self) {
-            .Float32 => 4,
-            .Float64 => 8,
-            .Vec2 => 8,
-            .Vec3 => 12,
-            .Vec4 => 16,
-            .Mat3 => 24,
-            .Mat4 => 64,
+    pub fn width(self: *const Binding) u8 {
+        return switch (self.*) {
+            .Float32 => @sizeOf(f32),
+            .Float64 => @sizeOf(f64),
+            .Vec2 => @sizeOf(f32) * 2,
+            .Vec3 => @sizeOf(f32) * 3,
+            .Vec4 => @sizeOf(f32) * 4,
+            .Mat3 => @sizeOf(f32) * 3 * 3,
+            .Mat4 => @sizeOf(f32) * 4 * 4,
         };
     }
 };

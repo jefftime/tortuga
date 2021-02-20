@@ -4,6 +4,7 @@ const Device = @import("device.zig").Device;
 const Binding = @import("binding.zig").Binding;
 const memory_zig = @import("memory.zig");
 const Buffer = memory_zig.Buffer;
+const MemoryUsage = memory_zig.MemoryUsage;
 const Memory = memory_zig.Memory;
 const mem = @import("mem");
 const alloc = mem.alloc;
@@ -76,7 +77,7 @@ pub const ShaderGroup = struct {
         for (uniforms) |*u, i| {
             u.* = uniform_memory.create_buffer(
                 16,
-                c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                MemoryUsage.Uniform.value(),
                 uniform_size
             ) catch |err| {
                 var ii = i;
@@ -168,8 +169,8 @@ pub const ShaderGroup = struct {
                 .dstSet = set,
                 .dstBinding = 0,
                 .dstArrayElement = 0,
-                .descriptorType =
-                    c.VkDescriptorType.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorType = c.VkDescriptorType
+                    .VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .descriptorCount = 1,
                 .pBufferInfo = &buffer_info,
                 .pImageInfo = null,
@@ -213,6 +214,18 @@ fn setup_bindings(
             var offset: u32 = 0;
             for (binding) |attribute| {
                 switch (attribute) {
+                    .Float32 => {
+                        const T = c.VkVertexInputAttributeDescription;
+                        attrs.*[cur_attr] = T {
+                            .location = cur_location,
+                            .binding = @intCast(u32, i),
+                            .format = c.VkFormat.VK_FORMAT_R32_SFLOAT,
+                            .offset = offset
+                        };
+                        cur_attr += 1;
+                        cur_location += 1;
+                    },
+
                     .Vec3 => {
                         const T = c.VkVertexInputAttributeDescription;
                         attrs.*[cur_attr] = T {
@@ -223,12 +236,14 @@ fn setup_bindings(
                         };
                         cur_attr += 1;
                         cur_location += 1;
-                        offset += @as(u32, @sizeOf(f32)) * 3;
                     },
 
                     else => return error.NotImplemented
                 }
+
+                offset += attribute.width();
             }
+
 
             bindings.*[i] = c.VkVertexInputBindingDescription {
                 .binding = @intCast(u32, i),

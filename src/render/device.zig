@@ -93,6 +93,7 @@ pub const Device = struct {
     graphics_index: u32,
     present_index: u32,
     memory: Memory,
+    command_pool: c.VkCommandPool,
 
     pub fn init(
         out_device: *Device,
@@ -181,6 +182,8 @@ pub const Device = struct {
             &present_queue
         );
 
+        const command_pool = try create_command_pool(device, graphics_index);
+
         out_device.* = Device {
             .context = context,
             .physical_device = device_id,
@@ -198,17 +201,19 @@ pub const Device = struct {
             .present_queue = present_queue,
             .graphics_index = graphics_index,
             .present_index = present_index,
-            .memory = undefined
+            .memory = undefined,
+            .command_pool = command_pool
         };
 
         const usage =
-            c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-            | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-            | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            MemoryUsage.Vertex.value()
+            | MemoryUsage.Index.value()
+            | MemoryUsage.Uniform.value();
         out_device.memory = try Memory.init(out_device, usage, mem_size);
     }
 
     pub fn deinit(self: *const Device) void {
+        Device.vkDestroyCommandPool.?(self.device, self.command_pool, null);
         self.memory.deinit();
         dealloc(self.swapchain_images.ptr);
         Device.vkDestroySemaphore.?(self.device, self.image_semaphore, null);
@@ -630,4 +635,27 @@ fn create_shader_module(
     if (result != c.VkResult.VK_SUCCESS) return error.BadShaderModule;
 
     return module;
+}
+
+fn create_command_pool(
+    device: c.VkDevice,
+    graphics_index: u32
+) !c.VkCommandPool {
+    const create_info = c.VkCommandPoolCreateInfo {
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = null,
+        .flags = 0,
+        .queueFamilyIndex = graphics_index,
+    };
+
+    var pool: c.VkCommandPool = undefined;
+    const result = Device.vkCreateCommandPool.?(
+        device,
+        &create_info,
+        null,
+        &pool
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
+
+    return pool;
 }

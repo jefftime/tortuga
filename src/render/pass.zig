@@ -16,22 +16,14 @@ const dealloc = mem.dealloc;
 pub const Pass = struct {
     device: *Device,
     shader: *const ShaderGroup,
-    vertices: Buffer,
-    indices: Buffer,
     pipeline_layout: c.VkPipelineLayout,
     render_pass: c.VkRenderPass,
     pipeline: c.VkPipeline,
     image_views: []c.VkImageView,
     framebuffers: []c.VkFramebuffer,
-    command_pool: c.VkCommandPool,
     command_buffers: []c.VkCommandBuffer,
 
     pub fn init(device: *Device, shader: *const ShaderGroup) !Pass {
-        var vertices: Buffer = undefined;
-        var indices: Buffer = undefined;
-        try create_vertex_data(device, &vertices, &indices);
-        errdefer vertices.deinit();
-        errdefer indices.deinit();
 
         var pipeline_layout = try create_pipeline_layout(
             device,
@@ -78,21 +70,11 @@ pub const Pass = struct {
             dealloc(framebuffers.ptr);
         }
 
-        const command_pool = try create_command_pool(device);
-        errdefer Device.vkDestroyCommandPool.?(
-            device.device,
-            command_pool,
-            null
-        );
-
-        const command_buffers = try create_command_buffers(
-            device,
-            command_pool
-        );
+        const command_buffers = try create_command_buffers(device);
         errdefer {
             Device.vkFreeCommandBuffers.?(
                 device.device,
-                command_pool,
+                device.command_pool,
                 @intCast(u32, command_buffers.len),
                 command_buffers.ptr
             );
@@ -102,14 +84,11 @@ pub const Pass = struct {
         return Pass {
             .device = device,
             .shader = shader,
-            .vertices = vertices,
-            .indices = indices,
             .pipeline_layout = pipeline_layout,
             .render_pass = render_pass,
             .pipeline = pipeline,
             .image_views = image_views,
             .framebuffers = framebuffers,
-            .command_pool = command_pool,
             .command_buffers = command_buffers,
         };
     }
@@ -146,25 +125,21 @@ pub const Pass = struct {
                 null
         );
 
-        self.vertices.deinit();
-        self.indices.deinit();
-
         Device.vkFreeCommandBuffers.?(
             self.device.device,
-            self.command_pool,
+            self.device.command_pool,
             @intCast(u32, self.command_buffers.len),
             self.command_buffers.ptr
         );
         dealloc(self.command_buffers.ptr);
-        Device.vkDestroyCommandPool.?(
-            self.device.device,
-            self.command_pool,
-            null
-        );
         std.log.info("destroying Pass", .{});
     }
 
-    pub fn write_command_buffers(self: *Pass) !void {
+    pub fn write_command_buffers(
+        self: *Pass,
+        vertices: *const Buffer,
+        indices: *const Buffer
+    ) !void {
         const begin_info = c.VkCommandBufferBeginInfo {
             .sType =
                 c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -216,21 +191,21 @@ pub const Pass = struct {
                     0,
                     1,
                     &self.shader.descriptor_sets[i],
-                    0,
-                    null
+                    1,
+                    &[_]u32 { 0 }
                 );
-                const offsets = &[_]c.VkDeviceSize { self.vertices.offset };
+                const offsets = &[_]c.VkDeviceSize { vertices.offset };
                 Device.vkCmdBindVertexBuffers.?(
                     buf,
                     0,
                     1,
-                    &self.vertices.memory.buffer,
+                    &vertices.memory.buffer,
                     offsets
                 );
                 Device.vkCmdBindIndexBuffer.?(
                     buf,
-                    self.indices.memory.buffer,
-                    self.indices.offset,
+                    indices.memory.buffer,
+                    indices.offset,
                     c.VkIndexType.VK_INDEX_TYPE_UINT16
                 );
                 Device.vkCmdDrawIndexed.?(buf, 6, 1, 0, 0, 0);
@@ -303,33 +278,6 @@ pub const Pass = struct {
     }
 };
 
-fn create_vertex_data(
-    device: *Device,
-    out_verts: *Buffer,
-    out_indices: *Buffer
-) !void {
-    const vertex_data = [_]f32 {
-        -0.5, -0.5, 0.0, 1.0, 0.0, 0.0,
-        -0.5,  0.5, 0.0, 0.0, 1.0, 0.0,
-         0.5,  0.5, 0.0, 1.0, 1.0, 1.0,
-         0.5, -0.5, 0.0, 0.0, 1.0, 0.0
-    };
-    const index_data = [_]u16 { 0, 1, 2, 2, 3, 0 };
-
-    out_verts.* = try device.memory.create_buffer(
-        16,
-        c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        vertex_data.len * @sizeOf(f32)
-    );
-    out_indices.* = try device.memory.create_buffer(
-        16,
-        c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        index_data.len * @sizeOf(u16)
-    );
-
-    try out_verts.write(f32, &vertex_data);
-    try out_indices.write(u16, &index_data);
-}
 
 fn create_pipeline_layout(
     device: *const Device,
@@ -714,30 +662,7 @@ fn create_framebuffers(
     return framebuffers;
 }
 
-fn create_command_pool(device: *Device) !c.VkCommandPool {
-    const create_info = c.VkCommandPoolCreateInfo {
-        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = null,
-        .flags = 0,
-        .queueFamilyIndex = device.graphics_index,
-    };
-
-    var pool: c.VkCommandPool = undefined;
-    const result = Device.vkCreateCommandPool.?(
-        device.device,
-        &create_info,
-        null,
-        &pool
-    );
-    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
-
-    return pool;
-}
-
-fn create_command_buffers(
-    device: *const Device,
-    command_pool: c.VkCommandPool
-) ![]c.VkCommandBuffer {
+fn create_command_buffers(device: *const Device,) ![]c.VkCommandBuffer {
     var command_buffers = try alloc(
         c.VkCommandBuffer,
         device.swapchain_images.len
@@ -748,7 +673,7 @@ fn create_command_buffers(
         .sType =
             c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = null,
-        .commandPool = command_pool,
+        .commandPool = device.command_pool,
         .level = c.VkCommandBufferLevel.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = @intCast(u32, device.swapchain_images.len)
     };
