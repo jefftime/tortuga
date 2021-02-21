@@ -25,10 +25,10 @@ pub const Pass = struct {
     pipeline: c.VkPipeline,
     image_views: []c.VkImageView,
     framebuffers: []c.VkFramebuffer,
+    command_pool: c.VkCommandPool, // TODO: Need pool per thread
     command_buffers: []c.VkCommandBuffer,
 
     pub fn init(device: *Device, shader: *const ShaderGroup) !Pass {
-
         var pipeline_layout = try create_pipeline_layout(
             device,
             shader
@@ -74,16 +74,11 @@ pub const Pass = struct {
             dealloc(framebuffers.ptr);
         }
 
-        const command_buffers = try create_command_buffers(device);
-        errdefer {
-            Device.vkFreeCommandBuffers.?(
-                device.device,
-                device.command_pool,
-                @intCast(u32, command_buffers.len),
-                command_buffers.ptr
-            );
-            dealloc(command_buffers.ptr);
-        }
+        var command_pool = try create_command_pool(device);
+        const command_buffers = try create_command_buffers(
+            device,
+            command_pool
+        );
 
         return Pass {
             .device = device,
@@ -93,7 +88,8 @@ pub const Pass = struct {
             .pipeline = pipeline,
             .image_views = image_views,
             .framebuffers = framebuffers,
-            .command_buffers = command_buffers,
+            .command_pool = command_pool,
+            .command_buffers = command_buffers
         };
     }
 
@@ -131,98 +127,21 @@ pub const Pass = struct {
 
         Device.vkFreeCommandBuffers.?(
             self.device.device,
-            self.device.command_pool,
+            self.command_pool,
             @intCast(u32, self.command_buffers.len),
             self.command_buffers.ptr
         );
+
         dealloc(self.command_buffers.ptr);
+        Device.vkDestroyCommandPool.?(
+            self.device.device,
+            self.command_pool,
+            null
+        );
         std.log.info("destroying Pass", .{});
     }
 
-    pub fn write_command_buffers(
-        self: *Pass,
-        vertices: *const Buffer,
-        indices: *const Buffer
-    ) !void {
-        const begin_info = c.VkCommandBufferBeginInfo {
-            .sType =
-                c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = null,
-            .flags = 0,
-            .pInheritanceInfo = null
-        };
-
-        for (self.command_buffers) |buf, i| {
-            var result = Device.vkBeginCommandBuffer.?(buf, &begin_info);
-            if (result != c.VkResult.VK_SUCCESS) {
-                return error.BadCommandBufferBegin;
-            }
-
-            const clear_value = c.VkClearValue {
-                .color = c.VkClearColorValue {
-                    .float32 = [_]f32 { 0, 0, 1, 0 }
-                }
-            };
-            const render_info = c.VkRenderPassBeginInfo {
-                .sType =
-                    c.VkStructureType.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-                .pNext = null,
-                .renderPass = self.render_pass,
-                .framebuffer = self.framebuffers[i],
-                .renderArea = c.VkRect2D {
-                    .offset = c.VkOffset2D { .x = 0, .y = 0 },
-                    .extent = self.device.swap_extent
-                },
-                .clearValueCount = 1,
-                .pClearValues = &clear_value
-            };
-
-            Device.vkCmdBeginRenderPass.?(
-                buf,
-                &render_info,
-                c.VkSubpassContents.VK_SUBPASS_CONTENTS_INLINE
-            );
-            {
-                Device.vkCmdBindPipeline.?(
-                    buf,
-                    c.VkPipelineBindPoint.VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    self.pipeline
-                );
-                Device.vkCmdBindDescriptorSets.?(
-                    buf,
-                    c.VkPipelineBindPoint.VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    self.pipeline_layout,
-                    0,
-                    1,
-                    &self.shader.descriptor_sets[i],
-                    0,
-                    null
-                );
-                const offsets = &[_]c.VkDeviceSize { vertices.offset };
-                Device.vkCmdBindVertexBuffers.?(
-                    buf,
-                    0,
-                    1,
-                    &vertices.memory.buffer,
-                    offsets
-                );
-                Device.vkCmdBindIndexBuffer.?(
-                    buf,
-                    indices.memory.buffer,
-                    indices.offset,
-                    c.VkIndexType.VK_INDEX_TYPE_UINT16
-                );
-                Device.vkCmdDrawIndexed.?(buf, 6, 1, 0, 0, 0);
-            }
-            Device.vkCmdEndRenderPass.?(buf);
-            result = Device.vkEndCommandBuffer.?(buf);
-            if (result != c.VkResult.VK_SUCCESS) {
-                return error.BadCommandBufferWrite;
-            }
-        }
-    }
-
-    pub fn begin(self: *Pass) ?PassToken {
+    pub fn begin(self: *Pass) !PassToken {
         var image_index: u32 = undefined;
         var result = Device.vkAcquireNextImageKHR.?(
             self.device.device,
@@ -234,10 +153,111 @@ pub const Pass = struct {
         );
         if (result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR) {
             // TODO
-            return null;
+            return error.NotImplemented;
+        }
+
+        for (self.command_buffers) |buf| {
+            result = Device.vkResetCommandBuffer.?(buf, 0);
+            if (result != c.VkResult.VK_SUCCESS) {
+                return error.BadCommandBufferReset;
+            }
         }
 
         return PassToken { .image_index = image_index };
+    }
+
+    pub fn draw(
+        self: *Pass,
+        token: PassToken,
+        vertices: *const Buffer,
+        indices: *const Buffer
+    ) !void {
+        const begin_info = c.VkCommandBufferBeginInfo {
+            .sType =
+                c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = null,
+            .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = null
+        };
+
+        var result = Device.vkBeginCommandBuffer.?(
+            self.command_buffers[token.image_index],
+            &begin_info
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            return error.BadCommandBufferBegin;
+        }
+
+        const clear_value = c.VkClearValue {
+            .color = c.VkClearColorValue {
+                .float32 = [_]f32 { 0, 0, 1, 0 }
+            }
+        };
+        const render_info = c.VkRenderPassBeginInfo {
+            .sType =
+                c.VkStructureType.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .pNext = null,
+            .renderPass = self.render_pass,
+            .framebuffer = self.framebuffers[token.image_index],
+            .renderArea = c.VkRect2D {
+                .offset = c.VkOffset2D { .x = 0, .y = 0 },
+                .extent = self.device.swap_extent
+            },
+            .clearValueCount = 1,
+            .pClearValues = &clear_value
+        };
+
+        Device.vkCmdBeginRenderPass.?(
+            self.command_buffers[token.image_index],
+            &render_info,
+            c.VkSubpassContents.VK_SUBPASS_CONTENTS_INLINE
+        );
+        {
+            Device.vkCmdBindPipeline.?(
+                self.command_buffers[token.image_index],
+                c.VkPipelineBindPoint.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                self.pipeline
+            );
+            Device.vkCmdBindDescriptorSets.?(
+                self.command_buffers[token.image_index],
+                c.VkPipelineBindPoint.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                self.pipeline_layout,
+                0,
+                1,
+                &self.shader.descriptor_sets[token.image_index],
+                0,
+                null
+            );
+            const offsets = &[_]c.VkDeviceSize { vertices.offset };
+            Device.vkCmdBindVertexBuffers.?(
+                self.command_buffers[token.image_index],
+                0,
+                1,
+                &vertices.memory.buffer,
+                offsets
+            );
+            Device.vkCmdBindIndexBuffer.?(
+                self.command_buffers[token.image_index],
+                indices.memory.buffer,
+                indices.offset,
+                c.VkIndexType.VK_INDEX_TYPE_UINT16
+            );
+            Device.vkCmdDrawIndexed.?(
+                self.command_buffers[token.image_index],
+                6,
+                1,
+                0,
+                0,
+                0
+            );
+        }
+        Device.vkCmdEndRenderPass.?(self.command_buffers[token.image_index]);
+        result = Device.vkEndCommandBuffer.?(
+            self.command_buffers[token.image_index]
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            return error.BadCommandBufferWrite;
+        }
     }
 
     pub fn submit(self: *Pass, token: PassToken) void {
@@ -671,7 +691,30 @@ fn create_framebuffers(
     return framebuffers;
 }
 
-fn create_command_buffers(device: *const Device,) ![]c.VkCommandBuffer {
+fn create_command_pool(device: *const Device) !c.VkCommandPool {
+    const create_info = c.VkCommandPoolCreateInfo {
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = null,
+        .flags = c.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = device.graphics_index,
+    };
+
+    var pool: c.VkCommandPool = undefined;
+    const result = Device.vkCreateCommandPool.?(
+        device.device,
+        &create_info,
+        null,
+        &pool
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
+
+    return pool;
+}
+
+fn create_command_buffers(
+    device: *const Device,
+    pool: c.VkCommandPool
+) ![]c.VkCommandBuffer {
     var command_buffers = try alloc(
         c.VkCommandBuffer,
         device.swapchain_images.len
@@ -682,7 +725,7 @@ fn create_command_buffers(device: *const Device,) ![]c.VkCommandBuffer {
         .sType =
             c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = null,
-        .commandPool = device.command_pool,
+        .commandPool = pool,
         .level = c.VkCommandBufferLevel.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = @intCast(u32, device.swapchain_images.len)
     };

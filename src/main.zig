@@ -60,7 +60,7 @@ pub fn main() anyerror!void {
             Vec3 { .x = 1, .y = 1, .z = 1 }
         }
     };
-    try shader.write_uniforms(Uniforms, &data);
+    // try shader.write_uniforms(Uniforms, &data);
 
     var vertices: Buffer = undefined;
     var indices: Buffer = undefined;
@@ -71,13 +71,22 @@ pub fn main() anyerror!void {
     var pass: Pass = undefined;
     try device.create_pass(&shader, &pass);
     defer pass.deinit();
-    try pass.write_command_buffers(&vertices, &indices);
 
     while (true) {
         if (window.should_close()) break;
         window.update();
 
-        const token = pass.begin() orelse break;
+        const token = pass.begin() catch |_| break;
+
+        var tmp = data;
+        tmp.colors[0] = data.colors[1];
+        tmp.colors[1] = data.colors[2];
+        tmp.colors[2] = data.colors[3];
+        tmp.colors[3] = data.colors[0];
+        data = tmp;
+        try shader.write_uniforms(Uniforms, &data);
+
+        try pass.draw(token, &vertices, &indices);
         pass.submit(token);
     }
 }

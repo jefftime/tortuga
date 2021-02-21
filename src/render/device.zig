@@ -33,6 +33,7 @@ pub const Device = struct {
     pub var vkAllocateCommandBuffers:
         c.PFN_vkAllocateCommandBuffers = undefined;
     pub var vkFreeCommandBuffers: c.PFN_vkFreeCommandBuffers = undefined;
+    pub var vkResetCommandBuffer: c.PFN_vkResetCommandBuffer = undefined;
     pub var vkBeginCommandBuffer: c.PFN_vkBeginCommandBuffer = undefined;
     pub var vkEndCommandBuffer: c.PFN_vkEndCommandBuffer = undefined;
     pub var vkCmdBeginRenderPass: c.PFN_vkCmdBeginRenderPass = undefined;
@@ -93,7 +94,6 @@ pub const Device = struct {
     graphics_index: u32,
     present_index: u32,
     memory: Memory,
-    command_pool: c.VkCommandPool,
 
     pub fn init(
         out_device: *Device,
@@ -182,8 +182,6 @@ pub const Device = struct {
             &present_queue
         );
 
-        const command_pool = try create_command_pool(device, graphics_index);
-
         out_device.* = Device {
             .context = context,
             .physical_device = device_id,
@@ -201,8 +199,7 @@ pub const Device = struct {
             .present_queue = present_queue,
             .graphics_index = graphics_index,
             .present_index = present_index,
-            .memory = undefined,
-            .command_pool = command_pool
+            .memory = undefined
         };
 
         const usage =
@@ -213,7 +210,6 @@ pub const Device = struct {
     }
 
     pub fn deinit(self: *const Device) void {
-        Device.vkDestroyCommandPool.?(self.device, self.command_pool, null);
         self.memory.deinit();
         dealloc(self.swapchain_images.ptr);
         Device.vkDestroySemaphore.?(self.device, self.image_semaphore, null);
@@ -440,6 +436,7 @@ fn load_device_functions(device: c.VkDevice) !void {
     try load(device, "vkDestroyCommandPool");
     try load(device, "vkAllocateCommandBuffers");
     try load(device, "vkFreeCommandBuffers");
+    try load(device, "vkResetCommandBuffer");
     try load(device, "vkBeginCommandBuffer");
     try load(device, "vkEndCommandBuffer");
     try load(device, "vkCmdBeginRenderPass");
@@ -637,25 +634,3 @@ fn create_shader_module(
     return module;
 }
 
-fn create_command_pool(
-    device: c.VkDevice,
-    graphics_index: u32
-) !c.VkCommandPool {
-    const create_info = c.VkCommandPoolCreateInfo {
-        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = null,
-        .flags = 0,
-        .queueFamilyIndex = graphics_index,
-    };
-
-    var pool: c.VkCommandPool = undefined;
-    const result = Device.vkCreateCommandPool.?(
-        device,
-        &create_info,
-        null,
-        &pool
-    );
-    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
-
-    return pool;
-}
