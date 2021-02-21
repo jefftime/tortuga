@@ -13,6 +13,10 @@ const new = mem.new;
 const alloc = mem.alloc;
 const dealloc = mem.dealloc;
 
+pub const PassToken = struct {
+    image_index: u32
+};
+
 pub const Pass = struct {
     device: *Device,
     shader: *const ShaderGroup,
@@ -191,8 +195,8 @@ pub const Pass = struct {
                     0,
                     1,
                     &self.shader.descriptor_sets[i],
-                    1,
-                    &[_]u32 { 0 }
+                    0,
+                    null
                 );
                 const offsets = &[_]c.VkDeviceSize { vertices.offset };
                 Device.vkCmdBindVertexBuffers.?(
@@ -218,7 +222,7 @@ pub const Pass = struct {
         }
     }
 
-    pub fn update(self: *Pass) void {
+    pub fn begin(self: *Pass) ?PassToken {
         var image_index: u32 = undefined;
         var result = Device.vkAcquireNextImageKHR.?(
             self.device.device,
@@ -230,9 +234,13 @@ pub const Pass = struct {
         );
         if (result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR) {
             // TODO
-            return;
+            return null;
         }
 
+        return PassToken { .image_index = image_index };
+    }
+
+    pub fn submit(self: *Pass, token: PassToken) void {
         const wait_stages = &[_]c.VkPipelineStageFlags {
             c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
         };
@@ -243,11 +251,11 @@ pub const Pass = struct {
             .pWaitSemaphores = &self.device.image_semaphore,
             .pWaitDstStageMask = wait_stages,
             .commandBufferCount = 1,
-            .pCommandBuffers = &self.command_buffers[image_index],
+            .pCommandBuffers = &self.command_buffers[token.image_index],
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &self.device.render_semaphore
         };
-        result = Device.vkQueueSubmit.?(
+        const result = Device.vkQueueSubmit.?(
             self.device.graphics_queue,
             1,
             &submit_info,
@@ -267,7 +275,7 @@ pub const Pass = struct {
             .pWaitSemaphores = &self.device.render_semaphore,
             .swapchainCount = 1,
             .pSwapchains = &self.device.swapchain.?,
-            .pImageIndices = &image_index,
+            .pImageIndices = &token.image_index,
             .pResults = null
         };
         _ = Device.vkQueuePresentKHR.?(
@@ -323,7 +331,8 @@ fn create_render_pass(device: *const Device) !c.VkRenderPass {
         .loadOp = c.VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = c.VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp = c.VkAttachmentLoadOp.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = c.VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .stencilStoreOp =
+            c.VkAttachmentStoreOp.VK_ATTACHMENT_STORE_OP_DONT_CARE,
         .initialLayout = c.VkImageLayout.VK_IMAGE_LAYOUT_UNDEFINED,
         .finalLayout = c.VkImageLayout.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
     };

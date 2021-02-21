@@ -77,7 +77,8 @@ pub fn main() anyerror!void {
         if (window.should_close()) break;
         window.update();
 
-        pass.update();
+        const token = pass.begin() orelse break;
+        pass.submit(token);
     }
 }
 
