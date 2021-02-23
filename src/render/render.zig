@@ -2,6 +2,8 @@ pub const Render = @This();
 pub const Context = @import("context.zig").Context;
 pub const Device = @import("device.zig").Device;
 
+pub const Mesh = @import("mesh.zig").Mesh;
+
 const pass = @import("pass.zig");
 pub const Pass = pass.Pass;
 

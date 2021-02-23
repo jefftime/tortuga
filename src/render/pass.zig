@@ -4,6 +4,7 @@ const Device = @import("device.zig").Device;
 const memory_zig = @import("memory.zig");
 const Memory = memory_zig.Memory;
 const Buffer = memory_zig.Buffer;
+const Mesh = @import("mesh.zig").Mesh;
 const binding_zig = @import("binding.zig");
 const Binding = binding_zig.Binding;
 const attribute_zig = @import("attribute.zig");
@@ -166,11 +167,46 @@ pub const Pass = struct {
         return PassToken { .image_index = image_index };
     }
 
+    pub fn set_uniforms(self: *Pass, comptime T: type, data: *const T) !void {
+        for (self.shader.uniforms) |*u| {
+            try u.write(T, @ptrCast([*]const T, data)[0..1]);
+            for (self.shader.descriptor_sets) |set, i| {
+                const buffer_info = c.VkDescriptorBufferInfo {
+                    .buffer = self.shader.uniforms[i].memory.buffer,
+                    .offset = self.shader.uniforms[i].offset,
+                    .range = @intCast(u32, self.shader.uniform_size)
+                };
+
+                const write_info = c.VkWriteDescriptorSet {
+                    .sType = c.VkStructureType
+                        .VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .pNext = null,
+                    .dstSet = set,
+                    .dstBinding = 0,
+                    .dstArrayElement = 0,
+                    .descriptorType = c.VkDescriptorType
+                        .VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .descriptorCount = 1,
+                    .pBufferInfo = &buffer_info,
+                    .pImageInfo = null,
+                    .pTexelBufferView = null
+                };
+
+                Device.vkUpdateDescriptorSets.?(
+                    self.device.device,
+                    1,
+                    &write_info,
+                    0,
+                    null
+                );
+            }
+        }
+    }
+
     pub fn draw(
         self: *Pass,
         token: PassToken,
-        vertices: *const Buffer,
-        indices: *const Buffer
+        mesh: *Mesh
     ) !void {
         const begin_info = c.VkCommandBufferBeginInfo {
             .sType =
@@ -190,7 +226,7 @@ pub const Pass = struct {
 
         const clear_value = c.VkClearValue {
             .color = c.VkClearColorValue {
-                .float32 = [_]f32 { 0, 0, 1, 0 }
+                .float32 = [_]f32 { 0.2, 0.1, 0.1, 0 }
             }
         };
         const render_info = c.VkRenderPassBeginInfo {
@@ -228,23 +264,23 @@ pub const Pass = struct {
                 0,
                 null
             );
-            const offsets = &[_]c.VkDeviceSize { vertices.offset };
+            const offsets = &[_]c.VkDeviceSize { mesh.vertices.offset };
             Device.vkCmdBindVertexBuffers.?(
                 self.command_buffers[token.image_index],
                 0,
                 1,
-                &vertices.memory.buffer,
+                &mesh.vertices.memory.buffer,
                 offsets
             );
             Device.vkCmdBindIndexBuffer.?(
                 self.command_buffers[token.image_index],
-                indices.memory.buffer,
-                indices.offset,
-                c.VkIndexType.VK_INDEX_TYPE_UINT16
+                mesh.indices.memory.buffer,
+                mesh.indices.offset,
+                mesh.index_type
             );
             Device.vkCmdDrawIndexed.?(
                 self.command_buffers[token.image_index],
-                6,
+                @intCast(u32, mesh.n_indices),
                 1,
                 0,
                 0,

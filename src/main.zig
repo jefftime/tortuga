@@ -10,6 +10,7 @@ const Binding = Render.Binding;
 const ShaderGroup = Render.ShaderGroup;
 const MemoryUsage = Render.MemoryUsage;
 const Pass = Render.Pass;
+const Mesh = Render.Mesh;
 const mem = @import("mem");
 const alloc = mem.alloc;
 const dealloc = mem.dealloc;
@@ -21,7 +22,6 @@ const Mat4 = geometry.Mat4;
 const Uniforms = extern struct {
     colors: [4]Vec3
 };
-
 pub fn main() anyerror!void {
     // TODO: parse args
 
@@ -60,61 +60,30 @@ pub fn main() anyerror!void {
             Vec3 { .x = 1, .y = 1, .z = 1 }
         }
     };
-    // try shader.write_uniforms(Uniforms, &data);
-
-    var vertices: Buffer = undefined;
-    var indices: Buffer = undefined;
-    try create_vertex_data(&device, &vertices, &indices);
-    defer vertices.deinit();
-    defer indices.deinit();
 
     var pass: Pass = undefined;
     try device.create_pass(&shader, &pass);
     defer pass.deinit();
 
-    while (true) {
-        if (window.should_close()) break;
-        window.update();
-
-        const token = pass.begin() catch |_| break;
-
-        var tmp = data;
-        tmp.colors[0] = data.colors[1];
-        tmp.colors[1] = data.colors[2];
-        tmp.colors[2] = data.colors[3];
-        tmp.colors[3] = data.colors[0];
-        data = tmp;
-        try shader.write_uniforms(Uniforms, &data);
-
-        try pass.draw(token, &vertices, &indices);
-        pass.submit(token);
-    }
-}
-
-fn create_vertex_data(
-    device: *Device,
-    out_verts: *Buffer,
-    out_indices: *Buffer
-) !void {
-    const vertex_data = [_]f32 {
+    const vertices = [_]f32 {
         -0.5, -0.5, 0.0, 0,
         -0.5, 0.5, 0.0, 1,
         0.5, 0.5, 0.0, 2,
         0.5, -0.5, 0.0, 3
     };
-    const index_data = [_]u16 { 0, 1, 2, 2, 3, 0 };
+    const indices = [_]u16 { 0, 1, 2, 2, 3, 0 };
 
-    out_verts.* = try device.memory.create_buffer(
-        16,
-        MemoryUsage.Vertex.value(),
-        vertex_data.len * @sizeOf(f32)
-    );
-    out_indices.* = try device.memory.create_buffer(
-        16,
-        MemoryUsage.Index.value(),
-        index_data.len * @sizeOf(u16)
-    );
+    var mesh: Mesh = undefined;
+    try mesh.init(&device, &vertices, &indices);
+    defer mesh.deinit();
 
-    try out_verts.write(f32, &vertex_data);
-    try out_indices.write(u16, &index_data);
+    while (true) {
+        if (window.should_close()) break;
+        window.update();
+
+        const token = try pass.begin();
+        try pass.set_uniforms(Uniforms, &data);
+        try pass.draw(token, &mesh);
+        pass.submit(token);
+    }
 }

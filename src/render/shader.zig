@@ -143,49 +143,6 @@ pub const ShaderGroup = struct {
             null
         );
     }
-
-    pub fn write_uniforms(
-        self: *ShaderGroup,
-        comptime T: type,
-        data: *const T
-    ) !void {
-        for (self.uniforms) |*u| {
-            try u.write(
-                T,
-                @ptrCast([*]const T, data)[0..1]
-            );
-        }
-
-        for (self.descriptor_sets) |set, i| {
-            const buffer_info = c.VkDescriptorBufferInfo {
-                .buffer = self.uniforms[i].memory.buffer,
-                .offset = self.uniforms[i].offset,
-                .range = @intCast(u32, self.uniform_size)
-            };
-
-            const write_info = c.VkWriteDescriptorSet {
-                .sType = c.VkStructureType.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .pNext = null,
-                .dstSet = set,
-                .dstBinding = 0,
-                .dstArrayElement = 0,
-                .descriptorType = c.VkDescriptorType
-                    .VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .descriptorCount = 1,
-                .pBufferInfo = &buffer_info,
-                .pImageInfo = null,
-                .pTexelBufferView = null
-            };
-
-            Device.vkUpdateDescriptorSets.?(
-                self.device.device,
-                1,
-                &write_info,
-                0,
-                null
-            );
-        }
-    }
 };
 
 fn setup_bindings(
