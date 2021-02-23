@@ -73,16 +73,20 @@ pub fn main() anyerror!void {
     };
     const indices = [_]u16 { 0, 1, 2, 2, 3, 0 };
 
+    try device.memory.map();
+
     var mesh: Mesh = undefined;
     try mesh.init(&device, &vertices, &indices);
     defer mesh.deinit();
+    try pass.set_uniforms(Uniforms, &data);
+
+    device.memory.unmap();
 
     while (true) {
         if (window.should_close()) break;
         window.update();
 
         const token = try pass.begin();
-        try pass.set_uniforms(Uniforms, &data);
         try pass.draw(token, &mesh);
         pass.submit(token);
     }

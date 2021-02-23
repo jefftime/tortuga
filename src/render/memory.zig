@@ -30,45 +30,10 @@ pub const Buffer = struct {
         comptime T: type,
         in_data: []const T
     ) !void {
-        const alignment = self.memory.device.props.limits.nonCoherentAtomSize;
-        const begin = self.offset - (self.offset % alignment);
-        const size = in_data.len * @sizeOf(T);
-        const len = size + (alignment - (size % alignment));
-        const range = c.VkMappedMemoryRange {
-            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-            .pNext = null,
-            .memory = self.memory.memory,
-            .offset = begin,
-            .size = len
-        };
-
-        var dst: [*]u8 = undefined;
-        var result = Device.vkMapMemory.?(
-            self.memory.device.device,
-            range.memory,
-            range.offset,
-            range.size,
-            0,
-            @ptrCast([*c]?*c_void, &dst)
-        );
-        if (result != c.VkResult.VK_SUCCESS) return error.BadMemoryMap;
-
         const data = @ptrCast([*]const u8, in_data.ptr);
-        @memcpy(dst + (self.offset - begin), data, size);
-        result = Device.vkFlushMappedMemoryRanges.?(
-            self.memory.device.device,
-            1,
-            &range
-        );
-        result = Device.vkInvalidateMappedMemoryRanges.?(
-            self.memory.device.device,
-            1,
-            &range
-        );
-        Device.vkUnmapMemory.?(
-            self.memory.device.device,
-            self.memory.memory
-        );
+        var dst = self.memory.mapped_dst orelse return error.MemoryUnmapped;
+
+        @memcpy(dst + (self.offset), data, in_data.len * @sizeOf(T));
     }
 };
 
@@ -79,6 +44,7 @@ pub const Memory = struct {
     offset: usize,
     buffer: c.VkBuffer,
     memory: c.VkDeviceMemory,
+    mapped_dst: ?[*]u8,
 
     pub fn init(
         device: *const Device,
@@ -148,7 +114,8 @@ pub const Memory = struct {
             .size = size,
             .offset = 0,
             .buffer = buffer,
-            .memory = memory
+            .memory = memory,
+            .mapped_dst = null
         };
     }
 
@@ -190,6 +157,51 @@ pub const Memory = struct {
 
     pub fn reset(self: *Memory) void {
         self.offset = 0;
+    }
+
+    pub fn map(self: *Memory) !void {
+        self.mapped_dst = undefined;
+        const result = Device.vkMapMemory.?(
+            self.device.device,
+            self.memory,
+            0,
+            c.VK_WHOLE_SIZE,
+            0,
+            @ptrCast([*c]?*c_void, &self.mapped_dst.?)
+        );
+        if (result != c.VkResult.VK_SUCCESS) return error.BadMemoryMap;
+    }
+
+    pub fn unmap(self: *Memory) void {
+        const range = c.VkMappedMemoryRange {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+            .pNext = null,
+            .memory = self.memory,
+            .offset = 0,
+            .size = c.VK_WHOLE_SIZE
+        };
+
+        var result = Device.vkFlushMappedMemoryRanges.?(
+            self.device.device,
+            1,
+            &range
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            std.log.err("unabled to flush mapped memory ranges", .{});
+        }
+
+        result = Device.vkInvalidateMappedMemoryRanges.?(
+            self.device.device,
+            1,
+            &range
+        );
+        if (result != c.VkResult.VK_SUCCESS) {
+            std.log.err("unable to invalidate mapped memory ranges", .{});
+        }
+
+        Device.vkUnmapMemory.?(self.device.device, self.memory);
+
+        self.mapped_dst = null;
     }
 };
 
