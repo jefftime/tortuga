@@ -52,14 +52,6 @@ pub fn main() anyerror!void {
         &shader
     );
     defer shader.deinit();
-    var data: Uniforms = Uniforms {
-        .colors = [4]Vec3 {
-            Vec3 { .x = 1, .y = 0, .z = 0 },
-            Vec3 { .x = 0, .y = 0, .z = 1 },
-            Vec3 { .x = 0, .y = 1, .z = 0 },
-            Vec3 { .x = 1, .y = 1, .z = 1 }
-        }
-    };
 
     var pass: Pass = undefined;
     try device.create_pass(&shader, &pass);
@@ -78,16 +70,39 @@ pub fn main() anyerror!void {
     var mesh: Mesh = undefined;
     try mesh.init(&device, &vertices, &indices);
     defer mesh.deinit();
+
+    var data: Uniforms = Uniforms {
+        .colors = [4]Vec3 {
+            Vec3 { .x = 1, .y = 0, .z = 0 },
+            Vec3 { .x = 0, .y = 0, .z = 1 },
+            Vec3 { .x = 0, .y = 1, .z = 0 },
+            Vec3 { .x = 1, .y = 1, .z = 1 }
+        }
+    };
     try pass.set_uniforms(Uniforms, &data);
 
     device.memory.unmap();
+
+    window.show_cursor();
 
     while (true) {
         if (window.should_close()) break;
         window.update();
 
-        const token = try pass.begin();
+        const token = pass.begin() catch |err| {
+            switch (err) {
+                error.OutOfDatePass => continue,
+                else => return err
+            }
+        };
+
         try pass.draw(token, &mesh);
-        pass.submit(token);
+
+        pass.submit(token) catch |err| {
+            switch (err) {
+                error.OutOfDatePass => continue,
+                else => return err
+            }
+        };
     }
 }

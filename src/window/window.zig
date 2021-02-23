@@ -136,7 +136,6 @@ pub const Window = struct {
             return error.BadXFixesVersion;
         }
         defer dealloc(xfixes_reply);
-        _ = c.xcb_xfixes_hide_cursor(cn, wn);
 
         _ = c.xcb_flush(cn);
 
@@ -191,6 +190,16 @@ pub const Window = struct {
 
             dealloc(event);
         }
+    }
+
+    pub fn show_cursor(self: *const Window) void {
+        _ = c.xcb_xfixes_show_cursor(self.cn, self.wn);
+        _ = c.xcb_flush(self.cn);
+    }
+
+    pub fn hide_cursor(self: *const Window) void {
+        _ = c.xcb_xfixes_hide_cursor(self.cn, self.wn);
+        _ = c.xcb_flush(self.cn);
     }
 
     pub fn should_close(self: *const Window) bool {

@@ -153,8 +153,14 @@ pub const Pass = struct {
             &image_index
         );
         if (result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR) {
-            // TODO
-            return error.NotImplemented;
+            var device = self.device;
+            var shader = self.shader;
+
+            self.deinit();
+
+            try device.recreate_swapchain();
+            self.* = try Pass.init(device, shader);
+            return error.OutOfDatePass;
         }
 
         for (self.command_buffers) |buf| {
@@ -296,7 +302,7 @@ pub const Pass = struct {
         }
     }
 
-    pub fn submit(self: *Pass, token: PassToken) void {
+    pub fn submit(self: *Pass, token: PassToken) !void {
         const wait_stages = &[_]c.VkPipelineStageFlags {
             c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
         };
@@ -317,11 +323,18 @@ pub const Pass = struct {
             &submit_info,
             null
         );
-        if (
-            result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR
-                or result == c.VkResult.VK_SUBOPTIMAL_KHR
-        ) {
-            // TODO
+
+        const out_of_date = result == c.VkResult.VK_ERROR_OUT_OF_DATE_KHR;
+        const suboptimal = result == c.VkResult.VK_SUBOPTIMAL_KHR;
+        if (out_of_date or suboptimal) {
+            const device = self.device;
+            const shader = self.shader;
+
+            self.deinit();
+
+            try device.recreate_swapchain();
+            self.* = try Pass.init(device, shader);
+            return error.OutOfDatePass;
         }
 
         const present_info = c.VkPresentInfoKHR {

@@ -142,23 +142,18 @@ pub const Device = struct {
             context.surface
         );
 
-        var caps: c.VkSurfaceCapabilitiesKHR = undefined;
-        var result = Context.vkGetPhysicalDeviceSurfaceCapabilitiesKHR.?(
-            physical_device,
-            context.surface,
-            &caps
-        );
-        if (result != c.VkResult.VK_SUCCESS) {
-            return error.BadSurfaceCapabilities;
-        }
-
-        const swapchain = try create_swapchain(
+        var swapchain: c.VkSwapchainKHR = undefined;
+        var current_extent: c.VkExtent2D = undefined;
+        try create_swapchain(
+            context,
             physical_device,
             device,
-            &caps,
             surface_format,
-            context.surface
+            context.surface,
+            &swapchain,
+            &current_extent
         );
+
         const swapchain_images = try get_swapchain_images(device, swapchain);
         errdefer dealloc(swapchain_images.ptr);
 
@@ -190,7 +185,7 @@ pub const Device = struct {
             .mem_props = mem_props,
             .device = device,
             .surface_format = surface_format,
-            .swap_extent = caps.currentExtent,
+            .swap_extent = current_extent,
             .swapchain = swapchain,
             .swapchain_images = swapchain_images,
             .image_semaphore = image_semaphore,
@@ -225,27 +220,30 @@ pub const Device = struct {
     }
 
     pub fn recreate_swapchain(self: *Device) !void {
-        dealloc(self.swapchain_images);
-        Device.vkDestroySwapchainKHR.?(self.device, self.swapchain, null);
+        dealloc(self.swapchain_images.ptr);
+        Context.vkDestroySwapchainKHR.?(self.device, self.swapchain.?, null);
 
-        self.swapchain = create_swapchain(
-            self.physical_device,
+        create_swapchain(
+            self.context,
+            self.context.devices[self.physical_device],
             self.device,
-            self.context.surface_format,
-            self.context.surface
+            self.surface_format,
+            self.context.surface,
+            &self.swapchain.?,
+            &self.swap_extent
         ) catch |err| {
             std.log.err("could not recreate swapchain", .{});
             self.swapchain = null;
             return err;
         };
         errdefer {
-            Device.vkDestroySwapchainKHR.?(self.device, self.swapchain.?, null);
+            Context.vkDestroySwapchainKHR.?(self.device, self.swapchain.?, null);
             self.swapchain = null;
         }
 
         self.swapchain_images = try get_swapchain_images(
             self.device,
-            self.swapchain
+            self.swapchain.?
         );
     }
 
@@ -504,14 +502,26 @@ fn select_format(
 }
 
 fn create_swapchain(
+    context: *const Context,
     physical_device: c.VkPhysicalDevice,
     device: c.VkDevice,
-    caps: *const c.VkSurfaceCapabilitiesKHR,
     surface_format: c.VkSurfaceFormatKHR,
-    surface: c.VkSurfaceKHR
-) !c.VkSwapchainKHR {
+    surface: c.VkSurfaceKHR,
+    out_swapchain: *c.VkSwapchainKHR,
+    out_current_extent: *c.VkExtent2D
+) !void {
+    var caps: c.VkSurfaceCapabilitiesKHR = undefined;
+    var result = Context.vkGetPhysicalDeviceSurfaceCapabilitiesKHR.?(
+        physical_device,
+        context.surface,
+        &caps
+    );
+    if (result != c.VkResult.VK_SUCCESS) {
+        return error.BadSurfaceCapabilities;
+    }
+
     var n_present_modes: u32 = 0;
-    var result = Context.vkGetPhysicalDeviceSurfacePresentModesKHR.?(
+    result = Context.vkGetPhysicalDeviceSurfacePresentModesKHR.?(
         physical_device,
         surface,
         &n_present_modes,
@@ -562,7 +572,8 @@ fn create_swapchain(
 
     std.log.info("created swapchain", .{});
 
-    return swapchain;
+    out_swapchain.* = swapchain;
+    out_current_extent.* = caps.currentExtent;
 }
 
 fn get_swapchain_images(
