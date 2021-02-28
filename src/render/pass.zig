@@ -26,7 +26,6 @@ pub const Pass = struct {
     pipeline: c.VkPipeline,
     image_views: []c.VkImageView,
     framebuffers: []c.VkFramebuffer,
-    command_pool: c.VkCommandPool, // TODO: Need pool per thread
     command_buffers: []c.VkCommandBuffer,
 
     pub fn init(device: *Device, shader: *const ShaderGroup) !Pass {
@@ -75,11 +74,11 @@ pub const Pass = struct {
             dealloc(framebuffers.ptr);
         }
 
-        var command_pool = try create_command_pool(device);
-        const command_buffers = try create_command_buffers(
-            device,
-            command_pool
+        const command_buffers = try alloc(
+            c.VkCommandBuffer,
+            device.swapchain_images.len
         );
+        try device.create_command_buffers(command_buffers);
 
         return Pass {
             .device = device,
@@ -89,7 +88,6 @@ pub const Pass = struct {
             .pipeline = pipeline,
             .image_views = image_views,
             .framebuffers = framebuffers,
-            .command_pool = command_pool,
             .command_buffers = command_buffers
         };
     }
@@ -126,19 +124,7 @@ pub const Pass = struct {
                 null
         );
 
-        Device.vkFreeCommandBuffers.?(
-            self.device.device,
-            self.command_pool,
-            @intCast(u32, self.command_buffers.len),
-            self.command_buffers.ptr
-        );
-
         dealloc(self.command_buffers.ptr);
-        Device.vkDestroyCommandPool.?(
-            self.device.device,
-            self.command_pool,
-            null
-        );
         std.log.info("destroying Pass", .{});
     }
 
@@ -178,7 +164,7 @@ pub const Pass = struct {
             try u.write(T, @ptrCast([*]const T, data)[0..1]);
             for (self.shader.descriptor_sets) |set, i| {
                 const buffer_info = c.VkDescriptorBufferInfo {
-                    .buffer = self.shader.uniforms[i].memory.buffer,
+                    .buffer = self.shader.uniforms[i].memory.cpu_buffer,
                     .offset = self.shader.uniforms[i].offset,
                     .range = @intCast(u32, self.shader.uniform_size)
                 };
@@ -207,6 +193,22 @@ pub const Pass = struct {
                 );
             }
         }
+    }
+
+    pub fn transfer_memory(self: *Pass, token: PassToken, buf: *Buffer) !void {
+        // const begin_info = Device.VkCommandBufferBeginInfo {
+        //     .sType =
+        //         c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        //     .pNext = null,
+        //     .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        //     .pInheritanceInfo = null
+        // };
+        // const cmd = self.command_buffers[token.image_index];
+        // Device.vkBeginCommandBuffer(cmd, &begin_info);
+        // {
+        //     const copy_region = c.VkBufferCopy { .size = buf.size };
+        //     Device.vkCmdCopyBuffer(cmd, buf.memory.buffer, )
+        // }
     }
 
     pub fn draw(
@@ -275,12 +277,12 @@ pub const Pass = struct {
                 self.command_buffers[token.image_index],
                 0,
                 1,
-                &mesh.vertices.memory.buffer,
+                &mesh.vertices.buffer,
                 offsets
             );
             Device.vkCmdBindIndexBuffer.?(
                 self.command_buffers[token.image_index],
-                mesh.indices.memory.buffer,
+                mesh.indices.buffer,
                 mesh.indices.offset,
                 mesh.index_type
             );
@@ -738,53 +740,5 @@ fn create_framebuffers(
     }
 
     return framebuffers;
-}
-
-fn create_command_pool(device: *const Device) !c.VkCommandPool {
-    const create_info = c.VkCommandPoolCreateInfo {
-        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = null,
-        .flags = c.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = device.graphics_index,
-    };
-
-    var pool: c.VkCommandPool = undefined;
-    const result = Device.vkCreateCommandPool.?(
-        device.device,
-        &create_info,
-        null,
-        &pool
-    );
-    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
-
-    return pool;
-}
-
-fn create_command_buffers(
-    device: *const Device,
-    pool: c.VkCommandPool
-) ![]c.VkCommandBuffer {
-    var command_buffers = try alloc(
-        c.VkCommandBuffer,
-        device.swapchain_images.len
-    );
-    errdefer dealloc(command_buffers.ptr);
-
-    const alloc_info = c.VkCommandBufferAllocateInfo {
-        .sType =
-            c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = null,
-        .commandPool = pool,
-        .level = c.VkCommandBufferLevel.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = @intCast(u32, device.swapchain_images.len)
-    };
-    const result = Device.vkAllocateCommandBuffers.?(
-        device.device,
-        &alloc_info,
-        command_buffers.ptr
-    );
-    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandBuffers;
-
-    return command_buffers;
 }
 

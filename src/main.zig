@@ -81,6 +81,12 @@ pub fn main() anyerror!void {
     };
     try pass.set_uniforms(Uniforms, &data);
 
+    // var texture_data: []u8 = &[_]u8 { 0 };
+    // var texture: Buffer = undefined;
+    // try device.memory.create_buffer(texture);
+    // try texture.stage(texture_data);
+    // try pass.transfer(texture);
+
     device.memory.unmap();
 
     window.show_cursor();

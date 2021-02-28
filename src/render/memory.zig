@@ -2,6 +2,11 @@ const std = @import("std");
 const c = @import("c").c;
 const Device = @import("device.zig").Device;
 
+pub const BufferType = enum {
+    Cpu,
+    Gpu
+};
+
 pub const MemoryUsage = enum(u32) {
     Uniform = c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
     Vertex = c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -14,12 +19,21 @@ pub const MemoryUsage = enum(u32) {
 
 pub const Buffer = struct {
     memory: *Memory,
+    buffer: c.VkBuffer,
     offset: usize,
+    kind: BufferType,
 
-    pub fn init(memory: *Memory, offset: usize) Buffer {
+    pub fn init(
+        memory: *Memory,
+        buffer: c.VkBuffer,
+        kind: BufferType,
+        offset: usize
+    ) Buffer {
         return Buffer {
             .memory = memory,
-            .offset = offset
+            .buffer = buffer,
+            .offset = offset,
+            .kind = kind
         };
     }
 
@@ -30,20 +44,29 @@ pub const Buffer = struct {
         comptime T: type,
         in_data: []const T
     ) !void {
-        const data = @ptrCast([*]const u8, in_data.ptr);
-        var dst = self.memory.mapped_dst orelse return error.MemoryUnmapped;
+        switch (self.kind) {
+            .Cpu => {
+                const data = @ptrCast([*]const u8, in_data.ptr);
+                var dst = self.memory.mapped_dst
+                    orelse return error.MemoryUnmapped;
 
-        @memcpy(dst + (self.offset), data, in_data.len * @sizeOf(T));
+                @memcpy(dst + (self.offset), data, in_data.len * @sizeOf(T));
+            },
+            else => return error.NotImplemented
+        }
     }
 };
 
 pub const Memory = struct {
     device: *const Device,
-    reqs: c.VkMemoryRequirements,
     size: usize,
     offset: usize,
-    buffer: c.VkBuffer,
-    memory: c.VkDeviceMemory,
+    cpu_buffer: c.VkBuffer,
+    cpu_memory: c.VkDeviceMemory,
+    cpu_reqs: c.VkMemoryRequirements,
+    gpu_buffer: c.VkBuffer,
+    gpu_memory: c.VkDeviceMemory,
+    gpu_reqs: c.VkMemoryRequirements,
     mapped_dst: ?[*]u8,
 
     pub fn init(
@@ -51,82 +74,62 @@ pub const Memory = struct {
         usage: u32,
         size: usize
     ) !Memory {
-        // This is the backing buffer for the memory section
-        const create_info = c.VkBufferCreateInfo {
-            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = null,
-            .flags = 0,
-            .sharingMode = c.VkSharingMode.VK_SHARING_MODE_EXCLUSIVE,
-            .size = size,
-            .usage = usage,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = null
-        };
-        var buffer: c.VkBuffer = undefined;
-        var result = Device.vkCreateBuffer.?(
-            device.device,
-            &create_info,
-            null,
-            &buffer
-        );
-        if (result != c.VkResult.VK_SUCCESS) return error.BadBuffer;
-        errdefer Device.vkDestroyBuffer.?(device.device, buffer, null);
-
-        var reqs: c.VkMemoryRequirements = undefined;
+        // Create and bind backing buffers
+        var cpu_buffer = try create_vkbuffer(device.device, size, usage);
+        errdefer Device.vkDestroyBuffer.?(device.device, cpu_buffer, null);
+        var cpu_reqs: c.VkMemoryRequirements = undefined;
         Device.vkGetBufferMemoryRequirements.?(
             device.device,
-            buffer,
-            &reqs
+            cpu_buffer,
+            &cpu_reqs
         );
-        const index = get_heap_index(
-            &device.mem_props,
-            reqs.memoryTypeBits,
-            c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-                | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-        ) orelse return error.BadHeadIndex;
+        var cpu_memory = try bind_memory(
+            device,
+            c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            cpu_buffer,
+            cpu_reqs
+        );
 
-        const alloc_info = c.VkMemoryAllocateInfo {
-            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .pNext = null,
-            .allocationSize = reqs.size,
-            .memoryTypeIndex = index,
-        };
-        var memory: c.VkDeviceMemory = undefined;
-        result = Device.vkAllocateMemory.?(
+        var gpu_buffer = try create_vkbuffer(device.device, size, usage);
+        errdefer Device.vkDestroyBuffer.?(device.device, gpu_buffer, null);
+        var gpu_reqs: c.VkMemoryRequirements = undefined;
+        Device.vkGetBufferMemoryRequirements.?(
             device.device,
-            &alloc_info,
-            null,
-            &memory
+            gpu_buffer,
+            &gpu_reqs
         );
-        if (result != c.VkResult.VK_SUCCESS) return error.BadAllocation;
-
-        result = Device.vkBindBufferMemory.?(
-            device.device,
-            buffer,
-            memory,
-            0
+        var gpu_memory = try bind_memory(
+            device,
+            c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            gpu_buffer,
+            gpu_reqs
         );
-        if (result != c.VkResult.VK_SUCCESS) return error.BadBufferBind;
 
         return Memory {
             .device = device,
-            .reqs = reqs,
             .size = size,
             .offset = 0,
-            .buffer = buffer,
-            .memory = memory,
+            .cpu_buffer = cpu_buffer,
+            .cpu_memory = cpu_memory,
+            .cpu_reqs = cpu_reqs,
+            .gpu_buffer = gpu_buffer,
+            .gpu_memory = gpu_memory,
+            .gpu_reqs = gpu_reqs,
             .mapped_dst = null
         };
     }
 
     pub fn deinit(self: *const Memory) void {
-        Device.vkDestroyBuffer.?(self.device.device, self.buffer, null);
-        Device.vkFreeMemory.?(self.device.device, self.memory, null);
+        Device.vkDestroyBuffer.?(self.device.device, self.cpu_buffer, null);
+        Device.vkDestroyBuffer.?(self.device.device, self.gpu_buffer, null);
+        Device.vkFreeMemory.?(self.device.device, self.cpu_memory, null);
+        Device.vkFreeMemory.?(self.device.device, self.gpu_memory, null);
         std.log.info("destroying Memory", .{});
     }
 
     pub fn create_buffer(
         self: *Memory,
+        kind: BufferType,
         alignment: usize,
         usage: u32,
         size: usize
@@ -142,17 +145,23 @@ pub const Memory = struct {
             .pQueueFamilyIndices = null
         };
 
-        var buf_align =
-            if (alignment < self.reqs.alignment) self.reqs.alignment
-            else alignment;
+        const req_align =
+            if (kind == .Cpu) self.cpu_reqs.alignment
+            else self.gpu_reqs.alignment;
+        var buf_align = if (alignment < req_align) req_align else alignment;
         var next_offset = self.offset;
         if (self.offset % buf_align != 0) {
             next_offset = self.offset + (buf_align - (self.offset % buf_align));
         }
 
+        if (next_offset > self.size) return error.OutOfMemory;
+
         self.offset = next_offset + size;
 
-        return Buffer.init(self, next_offset);
+        return switch (kind) {
+            .Cpu => Buffer.init(self, self.cpu_buffer, .Cpu, next_offset),
+            .Gpu => Buffer.init(self, self.gpu_buffer, .Gpu, 0)
+        };
     }
 
     pub fn reset(self: *Memory) void {
@@ -163,7 +172,7 @@ pub const Memory = struct {
         self.mapped_dst = undefined;
         const result = Device.vkMapMemory.?(
             self.device.device,
-            self.memory,
+            self.cpu_memory,
             0,
             c.VK_WHOLE_SIZE,
             0,
@@ -176,7 +185,7 @@ pub const Memory = struct {
         const range = c.VkMappedMemoryRange {
             .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             .pNext = null,
-            .memory = self.memory,
+            .memory = self.cpu_memory,
             .offset = 0,
             .size = c.VK_WHOLE_SIZE
         };
@@ -199,11 +208,64 @@ pub const Memory = struct {
             std.log.err("unable to invalidate mapped memory ranges", .{});
         }
 
-        Device.vkUnmapMemory.?(self.device.device, self.memory);
+        Device.vkUnmapMemory.?(self.device.device, self.cpu_memory);
 
         self.mapped_dst = null;
     }
 };
+
+fn create_vkbuffer(device: c.VkDevice, size: usize, usage: u32) !c.VkBuffer {
+    const create_info = c.VkBufferCreateInfo {
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = null,
+        .flags = 0,
+        .sharingMode = c.VkSharingMode.VK_SHARING_MODE_EXCLUSIVE,
+        .size = size,
+        .usage = usage,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = null
+    };
+    var buffer: c.VkBuffer = undefined;
+    var result = Device.vkCreateBuffer.?(device, &create_info, null, &buffer);
+    if (result != c.VkResult.VK_SUCCESS) return error.BadBuffer;
+
+    return buffer;
+}
+
+fn bind_memory(
+    device: *const Device,
+    kind: u32,
+    buf: c.VkBuffer,
+    reqs: c.VkMemoryRequirements
+) !c.VkDeviceMemory {
+    const index = get_heap_index(
+        &device.mem_props,
+        reqs.memoryTypeBits,
+        kind
+        // c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+        //     | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    ) orelse return error.BadHeapIndex;
+
+    const alloc_info = c.VkMemoryAllocateInfo {
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = null,
+        .allocationSize = reqs.size,
+        .memoryTypeIndex = index,
+    };
+    var memory: c.VkDeviceMemory = undefined;
+    var result = Device.vkAllocateMemory.?(
+        device.device,
+        &alloc_info,
+        null,
+        &memory
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadAllocation;
+
+    result = Device.vkBindBufferMemory.?(device.device, buf, memory, 0);
+    if (result != c.VkResult.VK_SUCCESS) return error.BadBufferBind;
+
+    return memory;
+}
 
 fn get_heap_index(
     props: *const c.VkPhysicalDeviceMemoryProperties,

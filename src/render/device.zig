@@ -93,6 +93,7 @@ pub const Device = struct {
     present_queue: c.VkQueue,
     graphics_index: u32,
     present_index: u32,
+    command_pool: c.VkCommandPool,
     memory: Memory,
 
     pub fn init(
@@ -177,6 +178,8 @@ pub const Device = struct {
             &present_queue
         );
 
+        const command_pool = try create_command_pool(device, graphics_index);
+
         out_device.* = Device {
             .context = context,
             .physical_device = device_id,
@@ -194,6 +197,7 @@ pub const Device = struct {
             .present_queue = present_queue,
             .graphics_index = graphics_index,
             .present_index = present_index,
+            .command_pool = command_pool,
             .memory = undefined
         };
 
@@ -206,6 +210,11 @@ pub const Device = struct {
 
     pub fn deinit(self: *const Device) void {
         self.memory.deinit();
+        Device.vkDestroyCommandPool.?(
+            self.device,
+            self.command_pool,
+            null
+        );
         dealloc(self.swapchain_images.ptr);
         Device.vkDestroySemaphore.?(self.device, self.image_semaphore, null);
         Device.vkDestroySemaphore.?(self.device, self.render_semaphore, null);
@@ -214,9 +223,6 @@ pub const Device = struct {
         }
         Context.vkDestroyDevice.?(self.device, null);
         std.log.info("destroying Device", .{});
-    }
-
-    pub fn set_memory(self: *Device, size: usize) !void {
     }
 
     pub fn recreate_swapchain(self: *Device) !void {
@@ -295,6 +301,26 @@ pub const Device = struct {
         out_pass: *Pass
     ) !void {
         out_pass.* = try Pass.init(self, shader);
+    }
+
+    pub fn create_command_buffers(
+        self: *Device,
+        out_bufs: []c.VkCommandBuffer
+    ) !void {
+        const alloc_info = c.VkCommandBufferAllocateInfo {
+            .sType = c.VkStructureType
+                .VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext = null,
+            .commandPool = self.command_pool,
+            .level = c.VkCommandBufferLevel.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = @intCast(u32, out_bufs.len)
+        };
+        const result = Device.vkAllocateCommandBuffers.?(
+            self.device,
+            &alloc_info,
+            out_bufs.ptr
+        );
+        if (result != c.VkResult.VK_SUCCESS) return error.BadCommandBuffers;
     }
 };
 
@@ -645,3 +671,25 @@ fn create_shader_module(
     return module;
 }
 
+fn create_command_pool(
+    device: c.VkDevice,
+    graphics_index: u32
+) !c.VkCommandPool {
+    const create_info = c.VkCommandPoolCreateInfo {
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = null,
+        .flags = c.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = graphics_index,
+    };
+
+    var pool: c.VkCommandPool = undefined;
+    const result = Device.vkCreateCommandPool.?(
+        device,
+        &create_info,
+        null,
+        &pool
+    );
+    if (result != c.VkResult.VK_SUCCESS) return error.BadCommandPool;
+
+    return pool;
+}
