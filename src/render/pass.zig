@@ -164,7 +164,7 @@ pub const Pass = struct {
             try u.write(T, @ptrCast([*]const T, data)[0..1]);
             for (self.shader.descriptor_sets) |set, i| {
                 const buffer_info = c.VkDescriptorBufferInfo {
-                    .buffer = self.shader.uniforms[i].memory.cpu_buffer,
+                    .buffer = self.shader.uniforms[i].memory.buffer,
                     .offset = self.shader.uniforms[i].offset,
                     .range = @intCast(u32, self.shader.uniform_size)
                 };

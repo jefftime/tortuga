@@ -8,6 +8,7 @@ const Device = Render.Device;
 const Buffer = Render.Buffer;
 const Binding = Render.Binding;
 const ShaderGroup = Render.ShaderGroup;
+const Memory = Render.Memory;
 const MemoryUsage = Render.MemoryUsage;
 const Pass = Render.Pass;
 const Mesh = Render.Mesh;
@@ -64,6 +65,15 @@ pub fn main() anyerror!void {
         0.5, -0.5, 0.0, 3
     };
     const indices = [_]u16 { 0, 1, 2, 2, 3, 0 };
+
+    var gpu_mem = try Memory.init(
+        &device,
+        .Gpu,
+        MemoryUsage.Uniform.value() | MemoryUsage.TransferDst.value(),
+        1024 * 4
+    );
+    defer gpu_mem.deinit();
+
 
     try device.memory.map();
 

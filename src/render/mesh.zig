@@ -17,13 +17,11 @@ pub const Mesh = struct {
         index_data: []const u16
     ) !void {
         var vertices = try device.memory.create_buffer(
-            .Cpu,
             16,
             MemoryUsage.Vertex.value(),
             vertex_data.len * @sizeOf(f32)
         );
         var indices = try device.memory.create_buffer(
-            .Cpu,
             16,
             MemoryUsage.Index.value(),
             index_data.len * @sizeOf(u16)

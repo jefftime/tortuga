@@ -76,7 +76,6 @@ pub const ShaderGroup = struct {
 
         for (uniforms) |*u, i| {
             u.* = uniform_memory.create_buffer(
-                .Cpu,
                 16,
                 MemoryUsage.Uniform.value(),
                 uniform_size

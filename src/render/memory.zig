@@ -11,6 +11,8 @@ pub const MemoryUsage = enum(u32) {
     Uniform = c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
     Vertex = c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
     Index = c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+    TransferSrc = c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    TransferDst = c.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 
     pub fn value(self: *const MemoryUsage) u32 {
         return @enumToInt(self.*);
@@ -22,18 +24,21 @@ pub const Buffer = struct {
     buffer: c.VkBuffer,
     offset: usize,
     kind: BufferType,
+    size: usize,
 
     pub fn init(
         memory: *Memory,
         buffer: c.VkBuffer,
         kind: BufferType,
-        offset: usize
+        offset: usize,
+        size: usize
     ) Buffer {
         return Buffer {
             .memory = memory,
             .buffer = buffer,
             .offset = offset,
-            .kind = kind
+            .kind = kind,
+            .size = size
         };
     }
 
@@ -44,92 +49,122 @@ pub const Buffer = struct {
         comptime T: type,
         in_data: []const T
     ) !void {
-        switch (self.kind) {
-            .Cpu => {
-                const data = @ptrCast([*]const u8, in_data.ptr);
-                var dst = self.memory.mapped_dst
-                    orelse return error.MemoryUnmapped;
+        if (self.kind == .Gpu) return error.InvalidBufferWrite;
 
-                @memcpy(dst + (self.offset), data, in_data.len * @sizeOf(T));
-            },
-            else => return error.NotImplemented
-        }
+        const data = @ptrCast([*]const u8, in_data.ptr);
+        var dst = self.memory.mapped_dst
+            orelse return error.MemoryUnmapped;
+
+        @memcpy(dst + (self.offset), data, in_data.len * @sizeOf(T));
+    }
+
+    pub fn copy_from(self: *Buffer, rhs: *Buffer) !void {
+        var cmd = try self.memory.device.create_command_buffer();
+        defer Device.vkFreeCommandBuffers.?(
+            self.memory.device.device,
+            self.memory.device.command_pool,
+            1,
+            &cmd
+        );
+
+        const begin_info = c.VkCommandBufferBeginInfo {
+            .sType =
+                c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .pNext = null,
+            .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = null
+        };
+        _ = Device.vkBeginCommandBuffer.?(cmd, &begin_info);
+        const copy_info = c.VkBufferCopy {
+            .srcOffset = rhs.offset,
+            .dstOffset = self.offset,
+            .size = rhs.size
+        };
+        _ = Device.vkCmdCopyBuffer.?(
+            cmd,
+            rhs.memory.buffer,
+            self.memory.buffer,
+            1,
+            &copy_info
+        );
+        _ = Device.vkEndCommandBuffer.?(cmd);
+        const submit_info = c.VkSubmitInfo {
+            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = null,
+            .waitSemaphoreCount = 0,
+            .pWaitSemaphores = null,
+            .pWaitDstStageMask = 0,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmd,
+            .signalSemaphoreCount = 0,
+            .pSignalSemaphores = null
+        };
+        _ = Device.vkQueueSubmit.?(
+            self.memory.device.graphics_queue,
+            1,
+            &submit_info,
+            null
+        );
+        _ = Device.vkQueueWaitIdle.?(self.memory.device.graphics_queue);
     }
 };
 
 pub const Memory = struct {
+    var cpu_index: u32 = undefined;
+    var gpu_index: u32 = undefined;
+
     device: *const Device,
+    kind: BufferType,
     size: usize,
     offset: usize,
-    cpu_buffer: c.VkBuffer,
-    cpu_memory: c.VkDeviceMemory,
-    cpu_reqs: c.VkMemoryRequirements,
-    gpu_buffer: c.VkBuffer,
-    gpu_memory: c.VkDeviceMemory,
-    gpu_reqs: c.VkMemoryRequirements,
+    buffer: c.VkBuffer,
+    memory: c.VkDeviceMemory,
+    reqs: c.VkMemoryRequirements,
     mapped_dst: ?[*]u8,
 
     pub fn init(
         device: *const Device,
+        kind: BufferType,
         usage: u32,
         size: usize
     ) !Memory {
         // Create and bind backing buffers
-        var cpu_buffer = try create_vkbuffer(device.device, size, usage);
-        errdefer Device.vkDestroyBuffer.?(device.device, cpu_buffer, null);
-        var cpu_reqs: c.VkMemoryRequirements = undefined;
-        Device.vkGetBufferMemoryRequirements.?(
-            device.device,
-            cpu_buffer,
-            &cpu_reqs
-        );
-        var cpu_memory = try bind_memory(
-            device,
-            c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-            cpu_buffer,
-            cpu_reqs
-        );
+        var buffer = try create_vkbuffer(device.device, size, usage);
+        errdefer Device.vkDestroyBuffer.?(device.device, buffer, null);
 
-        var gpu_buffer = try create_vkbuffer(device.device, size, usage);
-        errdefer Device.vkDestroyBuffer.?(device.device, gpu_buffer, null);
-        var gpu_reqs: c.VkMemoryRequirements = undefined;
-        Device.vkGetBufferMemoryRequirements.?(
-            device.device,
-            gpu_buffer,
-            &gpu_reqs
-        );
-        var gpu_memory = try bind_memory(
+        var reqs: c.VkMemoryRequirements = undefined;
+        Device.vkGetBufferMemoryRequirements.?(device.device, buffer, &reqs);
+        const mem_kind = switch (kind) {
+            .Cpu => c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+            .Gpu => c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+        };
+        var memory = try bind_memory(
             device,
-            c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            gpu_buffer,
-            gpu_reqs
+            @intCast(u32, mem_kind),
+            buffer,
+            reqs
         );
 
         return Memory {
             .device = device,
+            .kind = kind,
             .size = size,
             .offset = 0,
-            .cpu_buffer = cpu_buffer,
-            .cpu_memory = cpu_memory,
-            .cpu_reqs = cpu_reqs,
-            .gpu_buffer = gpu_buffer,
-            .gpu_memory = gpu_memory,
-            .gpu_reqs = gpu_reqs,
+            .buffer = buffer,
+            .memory = memory,
+            .reqs = reqs,
             .mapped_dst = null
         };
     }
 
     pub fn deinit(self: *const Memory) void {
-        Device.vkDestroyBuffer.?(self.device.device, self.cpu_buffer, null);
-        Device.vkDestroyBuffer.?(self.device.device, self.gpu_buffer, null);
-        Device.vkFreeMemory.?(self.device.device, self.cpu_memory, null);
-        Device.vkFreeMemory.?(self.device.device, self.gpu_memory, null);
+        Device.vkDestroyBuffer.?(self.device.device, self.buffer, null);
+        Device.vkFreeMemory.?(self.device.device, self.memory, null);
         std.log.info("destroying Memory", .{});
     }
 
     pub fn create_buffer(
         self: *Memory,
-        kind: BufferType,
         alignment: usize,
         usage: u32,
         size: usize
@@ -145,9 +180,7 @@ pub const Memory = struct {
             .pQueueFamilyIndices = null
         };
 
-        const req_align =
-            if (kind == .Cpu) self.cpu_reqs.alignment
-            else self.gpu_reqs.alignment;
+        const req_align = self.reqs.alignment;
         var buf_align = if (alignment < req_align) req_align else alignment;
         var next_offset = self.offset;
         if (self.offset % buf_align != 0) {
@@ -158,10 +191,7 @@ pub const Memory = struct {
 
         self.offset = next_offset + size;
 
-        return switch (kind) {
-            .Cpu => Buffer.init(self, self.cpu_buffer, .Cpu, next_offset),
-            .Gpu => Buffer.init(self, self.gpu_buffer, .Gpu, 0)
-        };
+        return Buffer.init(self, self.buffer, self.kind, next_offset, size);
     }
 
     pub fn reset(self: *Memory) void {
@@ -169,10 +199,12 @@ pub const Memory = struct {
     }
 
     pub fn map(self: *Memory) !void {
+        if (self.kind == .Gpu) return error.InvalidMemoryMap;
+
         self.mapped_dst = undefined;
         const result = Device.vkMapMemory.?(
             self.device.device,
-            self.cpu_memory,
+            self.memory,
             0,
             c.VK_WHOLE_SIZE,
             0,
@@ -185,7 +217,7 @@ pub const Memory = struct {
         const range = c.VkMappedMemoryRange {
             .sType = c.VkStructureType.VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
             .pNext = null,
-            .memory = self.cpu_memory,
+            .memory = self.memory,
             .offset = 0,
             .size = c.VK_WHOLE_SIZE
         };
@@ -208,7 +240,7 @@ pub const Memory = struct {
             std.log.err("unable to invalidate mapped memory ranges", .{});
         }
 
-        Device.vkUnmapMemory.?(self.device.device, self.cpu_memory);
+        Device.vkUnmapMemory.?(self.device.device, self.memory);
 
         self.mapped_dst = null;
     }
@@ -242,8 +274,6 @@ fn bind_memory(
         &device.mem_props,
         reqs.memoryTypeBits,
         kind
-        // c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-        //     | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     ) orelse return error.BadHeapIndex;
 
     const alloc_info = c.VkMemoryAllocateInfo {

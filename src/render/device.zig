@@ -42,6 +42,7 @@ pub const Device = struct {
     pub var vkCmdBindVertexBuffers: c.PFN_vkCmdBindVertexBuffers = undefined;
     pub var vkCmdBindIndexBuffer: c.PFN_vkCmdBindIndexBuffer = undefined;
     pub var vkCmdDrawIndexed: c.PFN_vkCmdDrawIndexed = undefined;
+    pub var vkCmdCopyBuffer: c.PFN_vkCmdCopyBuffer = undefined;
 
     // Descriptors
     pub var vkCreateDescriptorPool: c.PFN_vkCreateDescriptorPool = undefined;
@@ -198,14 +199,15 @@ pub const Device = struct {
             .graphics_index = graphics_index,
             .present_index = present_index,
             .command_pool = command_pool,
-            .memory = undefined
+            .memory = undefined,
         };
 
         const usage =
             MemoryUsage.Vertex.value()
             | MemoryUsage.Index.value()
-            | MemoryUsage.Uniform.value();
-        out_device.memory = try Memory.init(out_device, usage, mem_size);
+            | MemoryUsage.Uniform.value()
+            | MemoryUsage.TransferSrc.value();
+        out_device.memory = try Memory.init(out_device, .Cpu, usage, mem_size);
     }
 
     pub fn deinit(self: *const Device) void {
@@ -303,8 +305,14 @@ pub const Device = struct {
         out_pass.* = try Pass.init(self, shader);
     }
 
+    pub fn create_command_buffer(self: *const Device) !c.VkCommandBuffer {
+        var cmd: [1]c.VkCommandBuffer = undefined;
+        try self.create_command_buffers(&cmd);
+        return cmd[0];
+    }
+
     pub fn create_command_buffers(
-        self: *Device,
+        self: *const Device,
         out_bufs: []c.VkCommandBuffer
     ) !void {
         const alloc_info = c.VkCommandBufferAllocateInfo {
@@ -469,6 +477,7 @@ fn load_device_functions(device: c.VkDevice) !void {
     try load(device, "vkCmdBindVertexBuffers");
     try load(device, "vkCmdBindIndexBuffer");
     try load(device, "vkCmdDrawIndexed");
+    try load(device, "vkCmdCopyBuffer");
     try load(device, "vkCreateDescriptorPool");
     try load(device, "vkDestroyDescriptorPool");
     try load(device, "vkCreateDescriptorSetLayout");
