@@ -1,18 +1,13 @@
 const std = @import("std");
-const c = @import("c").c;
-const Device = @import("device.zig").Device;
-const memory_zig = @import("memory.zig");
-const Memory = memory_zig.Memory;
-const Buffer = memory_zig.Buffer;
-const Mesh = @import("mesh.zig").Mesh;
-const binding_zig = @import("binding.zig");
-const Binding = binding_zig.Binding;
-const attribute_zig = @import("attribute.zig");
-const ShaderGroup = @import("shader.zig").ShaderGroup;
-const mem = @import("mem");
-const new = mem.new;
-const alloc = mem.alloc;
-const dealloc = mem.dealloc;
+
+usingnamespace @import("c");
+usingnamespace @import("mem");
+usingnamespace @import("device.zig");
+usingnamespace @import("memory.zig");
+usingnamespace @import("buffer.zig");
+usingnamespace @import("mesh.zig");
+usingnamespace @import("binding.zig");
+usingnamespace @import("shader.zig");
 
 pub const PassToken = struct {
     image_index: u32

@@ -1,14 +1,11 @@
-const c = @import("c").c;
 const std = @import("std");
-const Device = @import("device.zig").Device;
-const Binding = @import("binding.zig").Binding;
-const memory_zig = @import("memory.zig");
-const Buffer = memory_zig.Buffer;
-const MemoryUsage = memory_zig.MemoryUsage;
-const Memory = memory_zig.Memory;
-const mem = @import("mem");
-const alloc = mem.alloc;
-const dealloc = mem.dealloc;
+
+usingnamespace @import("c");
+usingnamespace @import("mem");
+usingnamespace @import("device.zig");
+usingnamespace @import("binding.zig");
+usingnamespace @import("memory.zig");
+usingnamespace @import("buffer.zig");
 
 pub const ShaderGroup = struct {
     device: *const Device,

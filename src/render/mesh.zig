@@ -1,8 +1,8 @@
-pub const c = @import("c").c;
-pub const Device = @import("device.zig").Device;
-pub const memory_zig = @import("memory.zig");
-pub const MemoryUsage = memory_zig.MemoryUsage;
-pub const Buffer = memory_zig.Buffer;
+const c = @import("c").c;
+
+usingnamespace @import("device.zig");
+usingnamespace @import("memory.zig");
+usingnamespace @import("buffer.zig");
 
 pub const Mesh = struct {
     vertices: Buffer,
@@ -12,16 +12,16 @@ pub const Mesh = struct {
 
     pub fn init(
         out_mesh: *Mesh,
-        device: *Device,
+        memory: *Memory,
         vertex_data: []const f32,
         index_data: []const u16
     ) !void {
-        var vertices = try device.memory.create_buffer(
+        var vertices = try memory.create_buffer(
             16,
             MemoryUsage.Vertex.value(),
             vertex_data.len * @sizeOf(f32)
         );
-        var indices = try device.memory.create_buffer(
+        var indices = try memory.create_buffer(
             16,
             MemoryUsage.Index.value(),
             index_data.len * @sizeOf(u16)

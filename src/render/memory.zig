@@ -1,11 +1,8 @@
 const std = @import("std");
-const c = @import("c").c;
-const Device = @import("device.zig").Device;
 
-pub const BufferType = enum {
-    Cpu,
-    Gpu
-};
+usingnamespace @import("c");
+usingnamespace @import("device.zig");
+usingnamespace @import("buffer.zig");
 
 pub const MemoryUsage = enum(u32) {
     Uniform = c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -16,96 +13,6 @@ pub const MemoryUsage = enum(u32) {
 
     pub fn value(self: *const MemoryUsage) u32 {
         return @enumToInt(self.*);
-    }
-};
-
-pub const Buffer = struct {
-    memory: *Memory,
-    buffer: c.VkBuffer,
-    offset: usize,
-    kind: BufferType,
-    size: usize,
-
-    pub fn init(
-        memory: *Memory,
-        buffer: c.VkBuffer,
-        kind: BufferType,
-        offset: usize,
-        size: usize
-    ) Buffer {
-        return Buffer {
-            .memory = memory,
-            .buffer = buffer,
-            .offset = offset,
-            .kind = kind,
-            .size = size
-        };
-    }
-
-    pub fn deinit(self: *const Buffer) void {}
-
-    pub fn write(
-        self: *Buffer,
-        comptime T: type,
-        in_data: []const T
-    ) !void {
-        if (self.kind == .Gpu) return error.InvalidBufferWrite;
-
-        const data = @ptrCast([*]const u8, in_data.ptr);
-        var dst = self.memory.mapped_dst
-            orelse return error.MemoryUnmapped;
-
-        @memcpy(dst + (self.offset), data, in_data.len * @sizeOf(T));
-    }
-
-    pub fn copy_from(self: *Buffer, rhs: *Buffer) !void {
-        var cmd = try self.memory.device.create_command_buffer();
-        defer Device.vkFreeCommandBuffers.?(
-            self.memory.device.device,
-            self.memory.device.command_pool,
-            1,
-            &cmd
-        );
-
-        const begin_info = c.VkCommandBufferBeginInfo {
-            .sType =
-                c.VkStructureType.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = null,
-            .flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            .pInheritanceInfo = null
-        };
-        _ = Device.vkBeginCommandBuffer.?(cmd, &begin_info);
-        const copy_info = c.VkBufferCopy {
-            .srcOffset = rhs.offset,
-            .dstOffset = self.offset,
-            .size = rhs.size
-        };
-        _ = Device.vkCmdCopyBuffer.?(
-            cmd,
-            rhs.memory.buffer,
-            self.memory.buffer,
-            1,
-            &copy_info
-        );
-        _ = Device.vkEndCommandBuffer.?(cmd);
-        const submit_info = c.VkSubmitInfo {
-            .sType = c.VkStructureType.VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .pNext = null,
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = null,
-            .pWaitDstStageMask = 0,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &cmd,
-            .signalSemaphoreCount = 0,
-            .pSignalSemaphores = null
-        };
-        _ = Device.vkQueueSubmit.?(
-            self.memory.device.graphics_queue,
-            1,
-            &submit_info,
-            null
-        );
-        _ = Device.vkQueueWaitIdle.?(self.memory.device.graphics_queue);
     }
 };
 
@@ -271,7 +178,7 @@ fn bind_memory(
     reqs: c.VkMemoryRequirements
 ) !c.VkDeviceMemory {
     const index = get_heap_index(
-        &device.mem_props,
+        device.mem_props,
         reqs.memoryTypeBits,
         kind
     ) orelse return error.BadHeapIndex;
@@ -298,14 +205,16 @@ fn bind_memory(
 }
 
 fn get_heap_index(
-    props: *const c.VkPhysicalDeviceMemoryProperties,
+    props: c.VkPhysicalDeviceMemoryProperties,
     type_bit: u32,
     flags: c.VkMemoryPropertyFlags
 ) ?u32 {
     var i: u6 = 0;
     while (i < props.memoryTypeCount) : (i += 1) {
         if (type_bit & (@as(u64, 1) << i) != 0) {
-            if (props.memoryTypes[i].propertyFlags & flags != 0) return i;
+            if (props.memoryTypes[i].propertyFlags & flags != 0) {
+                return i;
+            }
         }
     }
 

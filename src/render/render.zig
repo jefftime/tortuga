@@ -12,7 +12,7 @@ pub const MemoryUsage = memory_zig.MemoryUsage;
 pub const Memory = memory_zig.Memory;
 pub const Buffer = memory_zig.Buffer;
 
-const memory_service = @import("memory_service.zig").MemoryService;
+pub const MemoryService = @import("memory_service.zig").MemoryService;
 
 const binding = @import("binding.zig");
 pub const Binding = binding.Binding;

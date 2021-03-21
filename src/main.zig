@@ -1,21 +1,11 @@
 const std = @import("std");
-const read_file = @import("util").read_file;
-const Window = @import("window").Window;
-const Render = @import("render").Render;
-const Context = Render.Context;
-const DeviceBuilder = Render.DeviceBuilder;
-const Device = Render.Device;
-const Buffer = Render.Buffer;
-const Binding = Render.Binding;
-const ShaderGroup = Render.ShaderGroup;
-const Memory = Render.Memory;
-const MemoryUsage = Render.MemoryUsage;
-const Pass = Render.Pass;
-const Mesh = Render.Mesh;
-const mem = @import("mem");
-const alloc = mem.alloc;
-const dealloc = mem.dealloc;
-const geometry = @import("math").geometry;
+
+usingnamespace @import("util");
+usingnamespace @import("window");
+usingnamespace @import("render");
+usingnamespace @import("math");
+usingnamespace @import("mem");
+
 const Vec3 = geometry.Vec3;
 const Vec4 = geometry.Vec4;
 const Mat4 = geometry.Mat4;
@@ -39,13 +29,17 @@ pub fn main() anyerror!void {
     try context.create_device(0, 2 * 1024 * 1024, &device);
     defer device.deinit();
 
+    var memory: MemoryService = undefined;
+    try memory.init(&device, 2 * 1024 * 1024);
+    defer memory.deinit();
+
     const vsrc = try read_file("shaders/vert.spv");
     defer dealloc(vsrc.ptr);
     const fsrc = try read_file("shaders/frag.spv");
     defer dealloc(fsrc.ptr);
     var shader: ShaderGroup = undefined;
     try device.create_shader(
-        &device.memory,
+        &memory.memory,
         Uniforms,
         &[_][]const Binding { &[_] Binding { .Vec3, .Float32 } },
         vsrc,
@@ -66,19 +60,10 @@ pub fn main() anyerror!void {
     };
     const indices = [_]u16 { 0, 1, 2, 2, 3, 0 };
 
-    var gpu_mem = try Memory.init(
-        &device,
-        .Gpu,
-        MemoryUsage.Uniform.value() | MemoryUsage.TransferDst.value(),
-        1024 * 4
-    );
-    defer gpu_mem.deinit();
-
-
-    try device.memory.map();
+    try memory.map();
 
     var mesh: Mesh = undefined;
-    try mesh.init(&device, &vertices, &indices);
+    try mesh.init(&memory.memory, &vertices, &indices);
     defer mesh.deinit();
 
     var data: Uniforms = Uniforms {
@@ -97,8 +82,7 @@ pub fn main() anyerror!void {
     // try texture.stage(texture_data);
     // try pass.transfer(texture);
 
-    device.memory.unmap();
-
+    memory.unmap();
     window.show_cursor();
 
     while (true) {

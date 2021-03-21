@@ -1,15 +1,12 @@
-pub const std = @import("std");
-pub const c = @import("c").c;
-pub const Context = @import("context.zig").Context;
-pub const ShaderGroup = @import("shader.zig").ShaderGroup;
-pub const memory_zig = @import("memory.zig");
-pub const MemoryUsage = memory_zig.MemoryUsage;
-pub const Memory = memory_zig.Memory;
-pub const Binding = @import("binding.zig").Binding;
-pub const Pass = @import("pass.zig").Pass;
-pub const mem = @import("mem");
-pub const alloc = mem.alloc;
-pub const dealloc = mem.dealloc;
+const std = @import("std");
+
+usingnamespace @import("c");
+usingnamespace @import("context.zig");
+usingnamespace @import("shader.zig");
+usingnamespace @import("binding.zig");
+usingnamespace @import("pass.zig");
+usingnamespace @import("memory.zig");
+usingnamespace @import("mem");
 
 pub const Device = struct {
     pub var vkGetDeviceQueue: c.PFN_vkGetDeviceQueue = undefined;
@@ -95,7 +92,6 @@ pub const Device = struct {
     graphics_index: u32,
     present_index: u32,
     command_pool: c.VkCommandPool,
-    memory: Memory,
 
     pub fn init(
         out_device: *Device,
@@ -199,19 +195,10 @@ pub const Device = struct {
             .graphics_index = graphics_index,
             .present_index = present_index,
             .command_pool = command_pool,
-            .memory = undefined,
         };
-
-        const usage =
-            MemoryUsage.Vertex.value()
-            | MemoryUsage.Index.value()
-            | MemoryUsage.Uniform.value()
-            | MemoryUsage.TransferSrc.value();
-        out_device.memory = try Memory.init(out_device, .Cpu, usage, mem_size);
     }
 
     pub fn deinit(self: *const Device) void {
-        self.memory.deinit();
         Device.vkDestroyCommandPool.?(
             self.device,
             self.command_pool,

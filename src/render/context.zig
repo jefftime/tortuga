@@ -1,11 +1,10 @@
 const std = @import("std");
-const mem_zig = @import("mem");
-const alloc = mem_zig.alloc;
-const dealloc = mem_zig.dealloc;
-const builtin = @import("builtin");
-const c = @import("c").c;
-const Window = @import("window").Window;
-const Device = @import("device.zig").Device;
+const builtin = std.builtin;
+
+usingnamespace @import("mem");
+usingnamespace @import("c");
+usingnamespace @import("window");
+usingnamespace @import("device.zig");
 
 pub const Context = struct {
     pub var get_proc: c.PFN_vkGetInstanceProcAddr = undefined;
@@ -17,7 +16,8 @@ pub const Context = struct {
     pub var vkDestroyInstance: c.PFN_vkDestroyInstance = undefined;
     pub var vkCreateXcbSurfaceKHR: c.PFN_vkCreateXcbSurfaceKHR = undefined;
     pub var vkDestroySurfaceKHR: c.PFN_vkDestroySurfaceKHR = undefined;
-    pub var vkEnumeratePhysicalDevices: c.PFN_vkEnumeratePhysicalDevices = undefined;
+    pub var vkEnumeratePhysicalDevices:
+        c.PFN_vkEnumeratePhysicalDevices = undefined;
     pub var vkGetDeviceProcAddr: c.PFN_vkGetDeviceProcAddr = undefined;
     pub var vkCreateDevice: c.PFN_vkCreateDevice = undefined;
     pub var vkDestroyDevice: c.PFN_vkDestroyDevice = undefined;
