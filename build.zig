@@ -2,6 +2,8 @@ const Builder = @import("std").build.Builder;
 const Pkg = @import("std").build.Pkg;
 const builtin = @import("builtin");
 
+const RenderBackend = enum { webgpu, vulkan };
+
 pub fn build(b: *Builder) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
@@ -16,50 +18,27 @@ pub fn build(b: *Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const c_pkg = Pkg {
-        .name = "c",
-        .path = "./src/c/c.zig"
-    };
-    const math_pkg = Pkg {
-        .name = "math",
-        .path = "./src/math/math.zig",
-        .dependencies = &[_]Pkg {c_pkg}
-    };
-    const mem_pkg = Pkg {
-        .name = "mem",
-        .path = "./src/mem/mem.zig",
-        .dependencies = &[_]Pkg {c_pkg}
-    };
-    const window_pkg = Pkg {
-        .name = "window",
-        .path = "./src/window/window.zig",
-        .dependencies = &[_]Pkg {c_pkg, mem_pkg}
-    };
-    const render_pkg = Pkg {
-        .name = "render",
-        .path = "./src/render/render.zig",
-        .dependencies = &[_]Pkg {c_pkg, window_pkg, mem_pkg}
-    };
-    const util_pkg = Pkg {
-        .name = "util",
-        .path = "./src/util/util.zig",
-        .dependencies = &[_]Pkg {c_pkg, mem_pkg}
-    };
-
     const exe = b.addExecutable("tortuga", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
-    exe.addIncludeDir("/usr/include");
-    exe.addLibPath("/usr/lib/x86_64-linux-gnu");
-    exe.addPackage(c_pkg);
-    exe.addPackage(math_pkg);
-    exe.addPackage(mem_pkg);
-    exe.addPackage(window_pkg);
-    exe.addPackage(render_pkg);
-    exe.addPackage(util_pkg);
     exe.linkLibC();
     exe.linkSystemLibrary("xcb");
     exe.linkSystemLibrary("xcb-xfixes");
+    exe.addLibPath("./lib");
+
+    const render_backend = b.option(
+        RenderBackend,
+        "render_backend",
+        "Configure rendering engine (webgpu, vulkan)"
+    ) orelse .webgpu;
+
+    switch (render_backend) {
+        .webgpu => { exe.linkSystemLibrary("wgpu_native"); },
+        else => {}
+    }
+
+    exe.addBuildOption(RenderBackend, "render_backend", render_backend);
+
     if (builtin.os.tag == .linux) {
         exe.linkSystemLibrary("dl");
     }

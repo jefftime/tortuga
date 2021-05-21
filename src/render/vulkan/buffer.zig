@@ -1,22 +1,17 @@
-usingnamespace @import("c");
+usingnamespace @import("../../c.zig");
 usingnamespace @import("memory.zig");
-
-pub const BufferType = enum {
-    Cpu,
-    Gpu
-};
 
 pub const Buffer = struct {
     memory: *Memory,
     buffer: c.VkBuffer,
     offset: usize,
-    kind: BufferType,
+    kind: MemoryType,
     size: usize,
 
     pub fn init(
         memory: *Memory,
         buffer: c.VkBuffer,
-        kind: BufferType,
+        kind: MemoryType,
         offset: usize,
         size: usize
     ) Buffer {

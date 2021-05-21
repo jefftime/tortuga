@@ -1,7 +1,5 @@
-const c = @import("c").c;
-const mem = @import("mem");
-const alloc = mem.alloc;
-const dealloc = mem.dealloc;
+usingnamespace @import("c.zig");
+usingnamespace @import("mem.zig");
 
 pub fn read_file(filename: []const u8) ![]u8 {
     const file = c.fopen(filename.ptr, "rb") orelse return error.FileNotFound;

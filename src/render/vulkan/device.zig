@@ -1,12 +1,13 @@
 const std = @import("std");
 
-usingnamespace @import("c");
+usingnamespace @import("../../c.zig");
+usingnamespace @import("../../mem.zig");
+
 usingnamespace @import("context.zig");
 usingnamespace @import("shader.zig");
 usingnamespace @import("binding.zig");
 usingnamespace @import("pass.zig");
 usingnamespace @import("memory.zig");
-usingnamespace @import("mem");
 
 pub const Device = struct {
     pub var vkGetDeviceQueue: c.PFN_vkGetDeviceQueue = undefined;

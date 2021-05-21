@@ -1,8 +1,13 @@
 const std = @import("std");
 
-usingnamespace @import("c");
+usingnamespace @import("../../c.zig");
 usingnamespace @import("device.zig");
 usingnamespace @import("buffer.zig");
+
+pub const MemoryType = enum(u32) {
+    Cpu = 0x01,
+    Gpu = 0x02
+};
 
 pub const MemoryUsage = enum(u32) {
     Uniform = c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -21,7 +26,7 @@ pub const Memory = struct {
     var gpu_index: u32 = undefined;
 
     device: *const Device,
-    kind: BufferType,
+    kind: MemoryType,
     size: usize,
     offset: usize,
     buffer: c.VkBuffer,
@@ -31,7 +36,7 @@ pub const Memory = struct {
 
     pub fn init(
         device: *const Device,
-        kind: BufferType,
+        kind: MemoryType,
         usage: u32,
         size: usize
     ) !Memory {

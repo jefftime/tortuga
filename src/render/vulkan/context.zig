@@ -1,9 +1,9 @@
 const std = @import("std");
 const builtin = std.builtin;
 
-usingnamespace @import("mem");
-usingnamespace @import("c");
-usingnamespace @import("window");
+usingnamespace @import("../../mem.zig");
+usingnamespace @import("../../c.zig");
+usingnamespace @import("../../window.zig");
 usingnamespace @import("device.zig");
 
 pub const Context = struct {

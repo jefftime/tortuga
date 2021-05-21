@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("c").c;
+usingnamespace @import("c.zig");
 
 fn alloc_internal(comptime T: type, len: usize) ![*]T {
     var mem: *T = undefined;
@@ -37,4 +37,4 @@ pub fn new(comptime T: type) !*T {
     return @ptrCast(*T, try alloc_internal(T, 1));
 }
 
-pub fn dealloc(ptr: anytype) void { c.free(ptr); }
+pub fn dealloc(ptr: anytype) void { c.free(@ptrCast(*c_void, ptr)); }

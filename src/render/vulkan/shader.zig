@@ -1,7 +1,7 @@
 const std = @import("std");
 
-usingnamespace @import("c");
-usingnamespace @import("mem");
+usingnamespace @import("../../c.zig");
+usingnamespace @import("../../mem.zig");
 usingnamespace @import("device.zig");
 usingnamespace @import("binding.zig");
 usingnamespace @import("memory.zig");

@@ -1,8 +1,6 @@
 const std = @import("std");
-const c = @import("c").c;
-const mem = @import("mem");
-const alloc_zeroed = mem.alloc_zeroed;
-const dealloc = mem.dealloc;
+usingnamespace @import("c.zig");
+usingnamespace @import("mem.zig");
 
 pub const Window = struct {
     cn: *c.xcb_connection_t,
@@ -158,6 +156,7 @@ pub const Window = struct {
     }
 
     pub fn deinit(self: *const Window) void {
+        self.show_cursor();
         std.log.info("closing XCB connection", .{});
         _ = c.xcb_xfixes_show_cursor(self.cn, self.wn);
         _ = c.xcb_destroy_window(self.cn, self.wn);
