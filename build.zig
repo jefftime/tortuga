@@ -22,8 +22,7 @@ pub fn build(b: *Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
-    exe.linkSystemLibrary("xcb");
-    exe.linkSystemLibrary("xcb-xfixes");
+    exe.addIncludeDir("./include");
     exe.addLibPath("./lib");
 
     const render_backend = b.option(
@@ -33,7 +32,11 @@ pub fn build(b: *Builder) void {
     ) orelse .webgpu;
 
     switch (render_backend) {
-        .webgpu => { exe.linkSystemLibrary("wgpu_native"); },
+        .webgpu => {
+            exe.addLibPath("/usr/lib/gcc/x86_64-linux-gnu/8");
+            exe.linkSystemLibrary("wgpu_native");
+            exe.linkSystemLibrary("gcc_s");
+        },
         else => {}
     }
 
@@ -41,6 +44,12 @@ pub fn build(b: *Builder) void {
 
     if (builtin.os.tag == .linux) {
         exe.linkSystemLibrary("dl");
+        exe.linkSystemLibrary("rt");
+        exe.linkSystemLibrary("m");
+        exe.linkSystemLibrary("xcb");
+        exe.linkSystemLibrary("xcb-xfixes");
+        exe.linkSystemLibrary("X11");
+        exe.linkSystemLibrary("X11-xcb");
     }
 
     if (mode == .Debug and asan_enabled) {

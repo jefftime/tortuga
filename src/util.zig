@@ -15,11 +15,13 @@ pub fn read_file(filename: []const u8) ![]u8 {
     rc = c.fseek(file, 0, c.SEEK_SET);
     if (rc == -1) return error.BadFileSeek;
 
-    const buf = try alloc(u8, @intCast(usize, len));
+    // Allocate len + 1 to append terminating character
+    const buf = try alloc(u8, @intCast(usize, len) + 1);
     errdefer dealloc(buf.ptr);
 
     const bytes_read = c.fread(buf.ptr, 1, @intCast(c_ulong, len), file);
     if (bytes_read != len) return error.BadFileRead;
+    buf[@intCast(usize, len)] = 0;
 
     return buf;
 }

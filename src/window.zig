@@ -3,8 +3,9 @@ usingnamespace @import("c.zig");
 usingnamespace @import("mem.zig");
 
 pub const Window = struct {
+    display: *c.Display,
     cn: *c.xcb_connection_t,
-    wn: c.xcb_window_t,
+    window: c.xcb_window_t,
     win_delete: c.xcb_atom_t,
     close: bool,
     title: []const u8,
@@ -18,23 +19,35 @@ pub const Window = struct {
         height: u16
     ) !void {
         // Initial setup
-        var screen_index: c_int = undefined;
-        const cn = c.xcb_connect(null, &screen_index) orelse {
-            std.log.err("could not establish XCB connection", .{});
+        // var screen_index: c_int = undefined;
+        // const cn = c.xcb_connect(null, &screen_index) orelse {
+        //     std.log.err("could not establish XCB connection", .{});
+        //     return error.BadConnection;
+        // };
+
+        const display = c.XOpenDisplay(null) orelse {
+            std.log.err("could not create X11 Display", .{});
+            return error.BadDisplay;
+        };
+        const cn = c.XGetXCBConnection(display) orelse {
+            std.log.err(
+                "could not create XCB connection from X11 Display",
+                .{}
+            );
             return error.BadConnection;
         };
 
         const setup = c.xcb_get_setup(cn);
         var screen_iter = c.xcb_setup_roots_iterator(setup);
 
-        var i: usize = 0;
-        while (i < screen_index) : (i += 1) {
-            c.xcb_screen_next(&screen_iter);
-        }
+        // var i: usize = 0;
+        // while (i < screen_index) : (i += 1) {
+        //     c.xcb_screen_next(&screen_iter);
+        // }
         const screen = screen_iter.data;
 
         // Window
-        const wn: c.xcb_window_t = c.xcb_generate_id(cn);
+        const window: c.xcb_window_t = c.xcb_generate_id(cn);
         const mask: u32 = c.XCB_CW_BACK_PIXEL | c.XCB_CW_EVENT_MASK;
         const values = [_]u32 {
             screen.*.black_pixel,
@@ -50,7 +63,7 @@ pub const Window = struct {
         _ = c.xcb_create_window(
             cn,
             c.XCB_COPY_FROM_PARENT,
-            wn,
+            window,
             screen.*.root,
             0, 0,
             width, height,
@@ -63,7 +76,7 @@ pub const Window = struct {
         _ = c.xcb_change_property(
             cn,
             c.XCB_PROP_MODE_REPLACE,
-            wn,
+            window,
             c.XCB_ATOM_WM_NAME,
             c.XCB_ATOM_STRING,
             8,
@@ -99,7 +112,7 @@ pub const Window = struct {
         _ = c.xcb_change_property(
             cn,
             c.XCB_PROP_MODE_REPLACE,
-            wn,
+            window,
             protocol.*.atom,
             c.XCB_ATOM_ATOM,
             32,
@@ -108,7 +121,7 @@ pub const Window = struct {
         );
         const win_delete = delete.*.atom;
 
-        _ = c.xcb_map_window(cn, wn);
+        _ = c.xcb_map_window(cn, window);
         _ = c.xcb_flush(cn);
 
         std.log.info("XCB connection established!", .{});
@@ -116,7 +129,7 @@ pub const Window = struct {
         const coords = [_]u32 { 100, 100 };
         _ = c.xcb_configure_window(
             cn,
-            wn,
+            window,
             c.XCB_CONFIG_WINDOW_X | c.XCB_CONFIG_WINDOW_Y,
             &coords
         );
@@ -145,8 +158,9 @@ pub const Window = struct {
 
 
         out_window.* = Window {
+            .display = display,
             .cn = cn,
-            .wn = wn,
+            .window = window,
             .win_delete = win_delete,
             .close = false,
             .title = title,
@@ -158,8 +172,8 @@ pub const Window = struct {
     pub fn deinit(self: *const Window) void {
         self.show_cursor();
         std.log.info("closing XCB connection", .{});
-        _ = c.xcb_xfixes_show_cursor(self.cn, self.wn);
-        _ = c.xcb_destroy_window(self.cn, self.wn);
+        _ = c.xcb_xfixes_show_cursor(self.cn, self.window);
+        _ = c.xcb_destroy_window(self.cn, self.window);
         c.xcb_disconnect(self.cn);
     }
 
@@ -170,7 +184,10 @@ pub const Window = struct {
                 // Resize
                 c.XCB_CONFIGURE_NOTIFY => {
                     var e = @ptrCast(*c.xcb_configure_notify_event_t, event);
-                    if ((e.*.width != self.width) or (e.*.height != self.height)) {
+                    const flag =
+                        (e.*.width != self.width)
+                        or (e.*.height != self.height);
+                    if (flag) {
                         self.width = e.*.width;
                         self.height = e.*.height;
                     }
@@ -192,12 +209,12 @@ pub const Window = struct {
     }
 
     pub fn show_cursor(self: *const Window) void {
-        _ = c.xcb_xfixes_show_cursor(self.cn, self.wn);
+        _ = c.xcb_xfixes_show_cursor(self.cn, self.window);
         _ = c.xcb_flush(self.cn);
     }
 
     pub fn hide_cursor(self: *const Window) void {
-        _ = c.xcb_xfixes_hide_cursor(self.cn, self.wn);
+        _ = c.xcb_xfixes_hide_cursor(self.cn, self.window);
         _ = c.xcb_flush(self.cn);
     }
 
