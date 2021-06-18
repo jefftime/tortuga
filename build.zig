@@ -2,7 +2,11 @@ const Builder = @import("std").build.Builder;
 const Pkg = @import("std").build.Pkg;
 const builtin = @import("builtin");
 
-const RenderBackend = enum { webgpu, vulkan };
+const RenderBackend = enum {
+    gl,
+    webgpu,
+    vulkan
+};
 
 pub fn build(b: *Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -32,10 +36,11 @@ pub fn build(b: *Builder) void {
     ) orelse .webgpu;
 
     switch (render_backend) {
+        .gl => {
+            exe.linkSystemLibrary("gl");
+        },
         .webgpu => {
-            exe.addLibPath("/usr/lib/gcc/x86_64-linux-gnu/8");
             exe.linkSystemLibrary("wgpu_native");
-            exe.linkSystemLibrary("gcc_s");
         },
         else => {}
     }
@@ -43,13 +48,17 @@ pub fn build(b: *Builder) void {
     exe.addBuildOption(RenderBackend, "render_backend", render_backend);
 
     if (builtin.os.tag == .linux) {
-        exe.linkSystemLibrary("dl");
-        exe.linkSystemLibrary("rt");
-        exe.linkSystemLibrary("m");
-        exe.linkSystemLibrary("xcb");
-        exe.linkSystemLibrary("xcb-xfixes");
-        exe.linkSystemLibrary("X11");
-        exe.linkSystemLibrary("X11-xcb");
+        const libs = &[_][]const u8 {
+            "dl",
+            "rt",
+            "m",
+            "xcb",
+            "xcb-xfixes",
+            "X11",
+            "X11-xcb"
+        };
+
+        for (libs) |lib| exe.linkSystemLibrary(lib);
     }
 
     if (mode == .Debug and asan_enabled) {

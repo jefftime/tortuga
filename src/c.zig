@@ -1,4 +1,5 @@
 const render_backend = @import("build_options").render_backend;
+const builtin = @import("std").builtin;
 
 pub const c = @cImport({
     // libc

@@ -1,4 +1,9 @@
+pub usingnamespace @import("webgpu/device.zig");
+
 usingnamespace @import("../window.zig");
+
+pub fn init_context(out_context: *Context) !void {
+}
 
 pub const Context = struct {
     pub fn init(self: *Context, window: *Window, libpath: ?[]const u8) !void {}
@@ -11,12 +16,6 @@ pub const Context = struct {
         size: usize,
         out_device: *Device
     ) !void {}
-};
-
-pub const Device = struct {
-    pub fn init(self: *Device) !void {}
-
-    pub fn deinit(self: *Device) void {}
 };
 
 pub const MemoryService = struct {
