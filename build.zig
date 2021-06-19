@@ -33,7 +33,7 @@ pub fn build(b: *Builder) void {
         RenderBackend,
         "render_backend",
         "Configure rendering engine (webgpu, vulkan)"
-    ) orelse .webgpu;
+    ) orelse .gl;
 
     switch (render_backend) {
         .gl => {

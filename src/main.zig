@@ -9,13 +9,6 @@ usingnamespace @import("c.zig");
 
 const backend = @import("build_options").render_backend;
 
-fn wgpu_log(
-    level: c.WGPULogLevel,
-    msg: [*c]const u8
-) callconv(.C) void {
-    std.log.warn("{s}", .{msg});
-}
-
 pub fn main() anyerror!void {
     // TODO: parse args
 
@@ -28,8 +21,9 @@ pub fn main() anyerror!void {
 
     window.show_cursor();
 
-    var device: Device = undefined;
-    try device.init(&window);
+    var renderer: GlRenderer = undefined;
+    try renderer.init(&window);
+    defer renderer.deinit();
 
     while (true) {
         if (window.should_close()) break;
