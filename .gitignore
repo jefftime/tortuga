@@ -3,3 +3,4 @@ lib
 d.sh
 include
 **/#*
+zig-out/
