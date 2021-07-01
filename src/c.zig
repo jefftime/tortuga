@@ -32,4 +32,10 @@ pub const c = @cImport({
         @cInclude("wgpu.h");
     }
 
+    if (render_backend == .gl) {
+        @cInclude("glad/glad_egl.h");
+        @cInclude("glad/eglplatform.h");
+        @cInclude("GL/gl.h");
+    }
+
 });

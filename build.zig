@@ -26,17 +26,20 @@ pub fn build(b: *Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
+    exe.addCSourceFile("c/glad/glad_egl.c", &[0][]const u8 {});
     exe.addIncludeDir("./include");
+    exe.addIncludeDir("./c");
     exe.addLibPath("./lib");
 
     const render_backend = b.option(
         RenderBackend,
         "render_backend",
-        "Configure rendering engine (webgpu, vulkan)"
+        "Configure rendering engine (webgpu, vulkan, gl)"
     ) orelse .gl;
 
     switch (render_backend) {
         .gl => {
+            exe.linkSystemLibrary("EGL");
             exe.linkSystemLibrary("gl");
         },
         .webgpu => {
@@ -55,7 +58,7 @@ pub fn build(b: *Builder) void {
             "xcb",
             "xcb-xfixes",
             "X11",
-            "X11-xcb"
+            "X11-xcb",
         };
 
         for (libs) |lib| exe.linkSystemLibrary(lib);
