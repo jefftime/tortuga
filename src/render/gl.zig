@@ -2,10 +2,17 @@ const std = @import("std");
 usingnamespace @import("../c.zig");
 usingnamespace @import("../window.zig");
 
+const ShaderAttribute = struct {
+    name: []const u8
+};
+
 pub const GlRenderer = struct {
     display: c.EGLDisplay,
     surface: c.EGLSurface,
     context: c.EGLContext,
+    buffer: c.GLuint,
+    shader: c.GLuint,
+    vao: c.GLuint,
 
     pub fn init(self: *GlRenderer, window: *Window) !void {
         if (c.eglBindAPI(c.EGL_OPENGL_API) != c.EGL_TRUE) {
@@ -85,19 +92,112 @@ pub const GlRenderer = struct {
         result = c.eglMakeCurrent(display, surface, surface, context);
         if (result != c.EGL_TRUE) return error.BadMakeCurrent;
 
-        if (c.gladLoadEGL() == 0) return error.BadGlad;
+        if (c.gladLoadEGL() == 0) return error.BadGladEgl;
+        if (c.gladLoadGL() == 0) return error.BadGladGl;
+
+        c.glClearColor(0.3, 0.0, 0.0, 1.0);
 
         self.* = GlRenderer {
             .display = display,
             .surface = surface,
-            .context = context
+            .context = context,
+            .buffer = 0,
+            .vao = 0,
+            .shader = 0
         };
     }
 
     pub fn deinit(self: *GlRenderer) void {
+        c.glDeleteProgram(self.shader);
+        c.glDeleteVertexArrays(1, &self.vao);
+        c.glDeleteBuffers(1, &self.buffer);
+
         _ = c.eglDestroySurface(self.display, self.surface);
         _ = c.eglDestroyContext(self.display, self.context);
         _ = c.eglTerminate(self.display);
+    }
+
+    pub fn swap_buffers(self: *GlRenderer) !void {
+        var result = c.eglSwapBuffers(self.display, self.surface);
+
+        if (result != c.EGL_TRUE) {
+            return error.BadSwap;
+        }
+    }
+
+    pub fn load_vertices(self: *GlRenderer, data: []const f32) void {
+        var vao: c.GLuint = undefined;
+        c.glGenVertexArrays(1, &vao);
+        c.glBindVertexArray(vao);
+
+        var buffer: c.GLuint = undefined;
+        c.glGenBuffers(1, &buffer);
+        c.glBindBuffer(c.GL_ARRAY_BUFFER, buffer);
+        c.glBufferData(
+            c.GL_ARRAY_BUFFER,
+            @intCast(c.GLsizeiptr, data.len * @sizeOf(f32)),
+            data.ptr,
+            c.GL_STATIC_DRAW
+        );
+
+        const pos_attr = @intCast(
+            c.GLuint,
+            c.glGetAttribLocation(self.shader, "pos")
+        );
+        c.glVertexAttribPointer(
+            pos_attr,
+            3,
+            c.GL_FLOAT,
+            c.GL_FALSE,
+            0,
+            null
+        );
+        c.glEnableVertexAttribArray(pos_attr);
+
+        self.buffer = buffer;
+        self.vao = vao;
+    }
+
+    pub fn compile_shader(
+        self: *GlRenderer,
+        vert_src: []const u8,
+        frag_src: []const u8,
+        attrs: ?[]ShaderAttribute
+    ) !void {
+        const vshader = c.glCreateShader(c.GL_VERTEX_SHADER);
+        const fshader = c.glCreateShader(c.GL_FRAGMENT_SHADER);
+        const vsrc = @ptrCast([*c]const [*c]const u8, &vert_src.ptr);
+        const fsrc = @ptrCast([*c]const [*c]const u8, &frag_src.ptr);
+        c.glShaderSource(vshader, 1, vsrc, null);
+        c.glShaderSource(fshader, 1, fsrc, null);
+        c.glCompileShader(vshader);
+        c.glCompileShader(fshader);
+
+        var status: c.GLint = undefined;
+        c.glGetShaderiv(vshader, c.GL_COMPILE_STATUS, &status);
+        if (status != c.GL_TRUE) return error.BadVertexShader;
+        c.glGetShaderiv(fshader, c.GL_COMPILE_STATUS, &status);
+        if (status != c.GL_TRUE) return error.BadFragmentShader;
+
+        const shader = c.glCreateProgram();
+        c.glAttachShader(shader, vshader);
+        c.glAttachShader(shader, fshader);
+
+        c.glBindFragDataLocation(shader, 0, "out_color");
+
+        c.glLinkProgram(shader);
+        c.glGetShaderiv(shader, c.GL_LINK_STATUS, &status);
+        if (status != c.GL_TRUE) return error.BadShaderLink;
+
+        // TODO: Rearchitect this
+        c.glUseProgram(shader);
+
+        self.shader = shader;
+    }
+
+    pub fn draw(self: *GlRenderer) void {
+        c.glClear(c.GL_COLOR_BUFFER_BIT);
+        c.glDrawArrays(c.GL_TRIANGLES, 0, 3);
     }
 };
 

@@ -33,6 +33,7 @@ pub const c = @cImport({
     }
 
     if (render_backend == .gl) {
+        @cInclude("glad/glad.h");
         @cInclude("glad/glad_egl.h");
         @cInclude("glad/eglplatform.h");
         @cInclude("GL/gl.h");

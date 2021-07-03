@@ -22,11 +22,16 @@ pub fn build(b: *Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
+    const c_files = [_][]const u8 {
+        "c/glad/glad.c",
+        "c/glad/glad_egl.c"
+    };
+
     const exe = b.addExecutable("tortuga", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.linkLibC();
-    exe.addCSourceFile("c/glad/glad_egl.c", &[0][]const u8 {});
+    exe.addCSourceFiles(&c_files, &[_][]const u8 {});
     exe.addIncludeDir("./include");
     exe.addIncludeDir("./c");
     exe.addLibPath("./lib");

@@ -25,9 +25,22 @@ pub fn main() anyerror!void {
     try renderer.init(&window);
     defer renderer.deinit();
 
+    const vert = try read_file("./shaders/gl/gl.vert");
+    const frag = try read_file("./shaders/gl/gl.frag");
+    try renderer.compile_shader(vert, frag, null);
+    renderer.load_vertices(&[_]f32 {
+        0, 1, 1,
+        -1, 0, 0,
+        1, 0, 1
+    });
+
     while (true) {
         if (window.should_close()) break;
 
         window.update();
+        renderer.draw();
+        renderer.swap_buffers() catch |_| {
+            std.log.err("error swapping buffers", .{});
+        };
     }
 }
