@@ -78,7 +78,7 @@ pub const Window = struct {
         std.log.info("closing XCB connection", .{});
         _ = c.xcb_xfixes_show_cursor(self.connection, self.window);
         _ = c.xcb_destroy_window(self.connection, self.window);
-        c.xcb_disconnect(self.connection);
+        _ = c.xcb_disconnect(self.connection);
     }
 
     pub fn update(self: *Window) void {

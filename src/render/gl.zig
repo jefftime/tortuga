@@ -1,10 +1,7 @@
 const std = @import("std");
 usingnamespace @import("../c.zig");
 usingnamespace @import("../window.zig");
-
-const ShaderAttribute = struct {
-    name: []const u8
-};
+usingnamespace @import("shader.zig");
 
 pub const GlRenderer = struct {
     display: c.EGLDisplay,
@@ -140,19 +137,28 @@ pub const GlRenderer = struct {
             c.GL_STATIC_DRAW
         );
 
-        const pos_attr = @intCast(
-            c.GLuint,
-            c.glGetAttribLocation(self.shader, "pos")
-        );
+        const pos_attr = 0;
+        const col_attr = 1;
+        c.glBindAttribLocation(self.shader, pos_attr, "pos");
+        c.glBindAttribLocation(self.shader, col_attr, "col");
         c.glVertexAttribPointer(
             pos_attr,
             3,
             c.GL_FLOAT,
             c.GL_FALSE,
-            0,
+            6 * @sizeOf(c.GLfloat),
             null
         );
+        c.glVertexAttribPointer(
+            col_attr,
+            3,
+            c.GL_FLOAT,
+            c.GL_FALSE,
+            6 * @sizeOf(c.GLfloat),
+            @intToPtr(?*c.GLvoid, 3 * @sizeOf(c.GLfloat))
+        );
         c.glEnableVertexAttribArray(pos_attr);
+        c.glEnableVertexAttribArray(col_attr);
 
         self.buffer = buffer;
         self.vao = vao;
@@ -174,10 +180,18 @@ pub const GlRenderer = struct {
         c.glCompileShader(fshader);
 
         var status: c.GLint = undefined;
+
         c.glGetShaderiv(vshader, c.GL_COMPILE_STATUS, &status);
-        if (status != c.GL_TRUE) return error.BadVertexShader;
+        if (status != c.GL_TRUE) {
+            print_shader_log(vshader);
+            return error.BadVertexShader;
+        }
+
         c.glGetShaderiv(fshader, c.GL_COMPILE_STATUS, &status);
-        if (status != c.GL_TRUE) return error.BadFragmentShader;
+        if (status != c.GL_TRUE) {
+            print_shader_log(fshader);
+            return error.BadFragmentShader;
+        }
 
         const shader = c.glCreateProgram();
         c.glAttachShader(shader, vshader);
@@ -220,4 +234,14 @@ fn error_string(err: i32) []const u8 {
         c.EGL_CONTEXT_LOST => return "EGL_CONTEXT_LOST",
         else => return "UNKNOWN ERROR"
     }
+}
+
+fn print_shader_log(shader: c.GLuint) void {
+    const MAX_LEN = 2048;
+    var len: c.GLsizei = undefined;
+    var log: [MAX_LEN]u8 = undefined;
+
+    c.glGetShaderInfoLog(shader, MAX_LEN, &len, &log);
+    var ulen = @intCast(usize, len);
+    std.log.err("{s}", .{log[0..ulen]});
 }

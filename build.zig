@@ -70,8 +70,7 @@ pub fn build(b: *Builder) void {
     }
 
     if (mode == .Debug and asan_enabled) {
-        // For some reason exe.linkSystemLibrary("asan") doesn't work :/
-        exe.addObjectFile("/usr/lib/x86_64-linux-gnu/libasan.so.5");
+        exe.linkSystemLibrary("asan");
     }
 
     exe.install();

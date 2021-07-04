@@ -25,13 +25,16 @@ pub fn main() anyerror!void {
     try renderer.init(&window);
     defer renderer.deinit();
 
-    const vert = try read_file("./shaders/gl/gl.vert");
-    const frag = try read_file("./shaders/gl/gl.frag");
-    try renderer.compile_shader(vert, frag, null);
-    renderer.load_vertices(&[_]f32 {
-        0, 1, 1,
-        -1, 0, 0,
-        1, 0, 1
+    const vshader = try read_file("./shaders/gl/gl.vert");
+    defer dealloc(vshader.ptr);
+    const fshader = try read_file("./shaders/gl/gl.frag");
+    defer dealloc(fshader.ptr);
+    try renderer.compile_shader(vshader, fshader, null);
+
+    renderer.load_vertices(&[_]c.GLfloat {
+        0, 1, 1, 1, 0, 0,
+        -1, 0, 0, 0, 1, 0,
+        1, 0, 1, 0, 0, 1
     });
 
     while (true) {
